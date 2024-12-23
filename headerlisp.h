@@ -4,8 +4,10 @@
 #include <assert.h>
 #include <cctype>
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <format>
+#include <iterator>
 #include <new>
 #include <stddef.h>
 #include <stdexcept>
@@ -14,6 +16,9 @@
 #include <type_traits>
 
 namespace headerlisp {
+
+class value;
+class value_range;
 
 class value {
     struct constructor_tag {};
@@ -34,6 +39,8 @@ public:
         memcpy(&result, &u64_, sizeof(value));
         return result;
     }
+
+    value_range range();
 
 private:
     constexpr value(constructor_tag, uint64_t x) : u64_(x) {}
@@ -168,13 +175,13 @@ inline std::string_view unwrap_string_view(value value) {
     return {str->str, str->length};
 }
 
-inline value unwrap_cdr(value value) {
+inline value &unwrap_cdr(value value) {
     assert(is_obj(value));
     obj *obj = nan_unbox_ptr(value);
     assert(obj->kind == value_kind::cons);
     return ((obj_cons *)obj->as)->cdr;
 }
-inline value unwrap_car(value value) {
+inline value &unwrap_car(value value) {
     assert(is_obj(value));
     obj *obj = nan_unbox_ptr(value);
     assert(obj->kind == value_kind::cons);
@@ -230,12 +237,12 @@ inline int num_int(value x) {
     return (int)num_i64(x);
 }
 
-inline value car(value x) {
+inline value &car(value x) {
     if (!is_cons(x))
         throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
     return unwrap_car(x);
 }
-inline value cdr(value x) {
+inline value &cdr(value x) {
     if (!is_cons(x))
         throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
     return unwrap_cdr(x);
@@ -285,11 +292,116 @@ inline value tenth(value x) { return cadr(cdddr(cddddr(x))); }
 
 // clang-format on
 
+inline bool operator==(value left, value right) {
+    if (!is_num(left))
+        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+    if (!is_num(right))
+        throw hl_exception("'==' called on non-number {}", value_kind_str(right));
+    return left.unsafe_f64() == right.unsafe_f64();
+}
+inline bool operator==(value left, double x) {
+    if (!is_num(left))
+        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+    return left.unsafe_f64() == x;
+}
+
+inline bool operator!=(value left, value right) {
+    if (!is_num(left))
+        throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
+    if (!is_num(right))
+        throw hl_exception("'!=' called on non-number {}", value_kind_str(right));
+    return left.unsafe_f64() != right.unsafe_f64();
+}
+inline bool operator!=(value left, double x) {
+    if (!is_num(left))
+        throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
+    return left.unsafe_f64() != x;
+}
+
+inline bool is_equal(value left, value right) {
+    value_kind kind = get_value_kind(left);
+    if (get_value_kind(right) != kind)
+        return false;
+    switch (kind) {
+    case value_kind::num: return left == right;
+    case value_kind::nil: return is_nil(left);
+    case value_kind::tru: return is_true(left);
+    case value_kind::cons:
+        return is_equal(unwrap_car(left), unwrap_car(right)) && is_equal(unwrap_cdr(left), unwrap_cdr(right));
+    case value_kind::string: {
+        obj_str *left_str = unwrap_string(left);
+        obj_str *right_str = unwrap_string(right);
+        return left_str->length == right_str->length && left_str->hash == right_str->hash &&
+               memcmp(left_str->str, right_str->str, left_str->length) == 0;
+    }
+    }
+    __builtin_unreachable();
+}
+
+class value_iter {
+public:
+    using difference_type = ptrdiff_t;
+    using value_type = value;
+    using pointer = value *;
+    using reference = value &;
+    using iterator_category = std::forward_iterator_tag;
+
+    value_iter() = delete;
+    value_iter(const value_iter &) = default;
+    value_iter(value_iter &&) = default;
+    value_iter &operator=(const value_iter &) = default;
+    value_iter &operator=(value_iter &&) = default;
+
+    explicit value_iter(value x) : current_(x) {}
+
+    reference operator*() { return car(current_); }
+    bool operator==(value_iter other) { return current_.internal() == other.current_.internal(); }
+
+    value_iter operator++(int) { return value_iter(cdr(current_)); }
+    value_iter &operator++() {
+        current_ = cdr(current_);
+        return *this;
+    }
+
+private:
+    value current_;
+};
+
+class value_range {
+public:
+    value_range() = delete;
+    value_range(const value_range &) = default;
+    value_range(value_range &&) = default;
+    value_range &operator=(const value_range &) = default;
+    value_range &operator=(value_range &&) = default;
+
+    explicit value_range(value x) : start_(x) {}
+
+    value_iter begin() { return value_iter{start_}; }
+    value_iter end() { return value_iter{nil}; }
+
+private:
+    value start_;
+};
+
+inline value_range value::range() {
+    return value_range(*this);
+}
+
 inline value nth(value lst, size_t idx) {
     while (idx--) {
         lst = cdr(lst);
     }
     return car(lst);
+}
+
+inline size_t length(value lst) {
+    size_t len = 0;
+    for (auto it : lst.range()) {
+        (void)it;
+        ++len;
+    }
+    return len;
 }
 
 inline void add_last(value &first, value &last, value x) {
@@ -324,11 +436,36 @@ template <typename... Args> inline value list(Args &&...args) {
     return first;
 }
 
+inline value append(value a, value b) {
+    value result = nil;
+    value result_tail = nil;
+    for (value x : a.range()) {
+        add_last(result, result_tail, x);
+    }
+    for (value x : b.range()) {
+        add_last(result, result_tail, x);
+    }
+    return result;
+}
+inline value append(value a, value b, value c) {
+    value result = nil;
+    value result_tail = nil;
+    for (value x : a.range()) {
+        add_last(result, result_tail, x);
+    }
+    for (value x : b.range()) {
+        add_last(result, result_tail, x);
+    }
+    for (value x : c.range()) {
+        add_last(result, result_tail, x);
+    }
+    return result;
+}
+
 template <typename F> inline value map(F f, value lst) {
     auto new_lst = nil;
     auto new_lst_end = nil;
-    for (; is_cons(lst); lst = cdr(lst)) {
-        auto it = car(lst);
+    for (auto it : lst.range()) {
         add_last(new_lst, new_lst_end, make_value(f(it)));
     }
     return new_lst;
@@ -343,11 +480,26 @@ template <typename F> inline value map(F f, value lst1, value lst2) {
     }
     return new_lst;
 }
+template <typename F> inline bool all(F f, value lst) {
+    for (auto it : lst.range()) {
+        if (!f(it)) {
+            return false;
+        }
+    }
+    return true;
+}
+template <typename F> inline bool any(F f, value lst) {
+    for (auto it : lst.range()) {
+        if (f(it)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 template <typename F> inline value foldl(F f, value init, value lst) {
     value result = init;
-    for (; is_cons(lst); lst = cdr(lst)) {
-        auto it = car(lst);
+    for (auto it : lst.range()) {
         result = make_value(f(it, result));
     }
     return result;
@@ -375,22 +527,60 @@ template <typename F> inline value foldr(F f, value init, value lst1, value lst2
 }
 inline value reverse(value lst) {
     value result = nil;
-    for (; is_cons(lst); lst = cdr(lst)) {
-        result = new_cons(car(lst), result);
+    for (auto it : lst.range()) {
+        result = new_cons(it, result);
     }
     return result;
 }
 
 template <typename F> inline value filter(F f, value lst) {
-    auto new_lst = nil;
-    auto new_lst_end = nil;
-    for (; is_cons(lst); lst = cdr(lst)) {
-        auto it = car(lst);
+    value new_lst = nil;
+    value new_lst_end = nil;
+    for (auto it : lst.range()) {
         if (f(it)) {
             add_last(new_lst, new_lst_end, it);
         }
     }
     return new_lst;
+}
+
+template <typename F> inline value filter_not(F f, value lst) {
+    return filter([&f](auto x) { return !f(x); }, lst);
+}
+
+template <typename F> inline value remove(value x, value lst, F f) {
+    value new_lst = nil;
+    value new_lst_end = nil;
+    for (auto it : lst.range()) {
+        if (!f(x, it)) {
+            add_last(new_lst, new_lst_end, it);
+        }
+    }
+    return new_lst;
+}
+inline value remove(value x, value lst) {
+    return remove(x, lst, is_equal);
+}
+
+inline value cartesian_product(value lst1, value lst2) {
+    value head = nil, tail = nil;
+    for (auto it1 : lst1.range()) {
+        for (auto it2 : lst2.range()) {
+            add_last(head, tail, list(it1, it2));
+        }
+    }
+    return head;
+}
+inline value cartesian_product(value lst1, value lst2, value lst3) {
+    value head = nil, tail = nil;
+    for (auto it1 : lst1.range()) {
+        for (auto it2 : lst2.range()) {
+            for (auto it3 : lst3.range()) {
+                add_last(head, tail, list(it1, it2, it3));
+            }
+        }
+    }
+    return head;
 }
 
 inline bool is_even(value x) {
@@ -447,49 +637,56 @@ inline value operator/(value left, value right) {
         throw hl_exception("'/' called on non-number {}", value_kind_str(right));
     return make_value(left.unsafe_f64() / right.unsafe_f64());
 }
-inline bool operator==(value left, value right) {
-    if (!is_num(left))
-        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
-    if (!is_num(right))
-        throw hl_exception("'==' called on non-number {}", value_kind_str(right));
-    return left.unsafe_f64() == right.unsafe_f64();
-}
-inline bool operator!=(value left, value right) {
-    if (!is_num(left))
-        throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
-    if (!is_num(right))
-        throw hl_exception("'!=' called on non-number {}", value_kind_str(right));
-    return left.unsafe_f64() != right.unsafe_f64();
-}
-
-inline bool equal(value left, value right) {
-    value_kind kind = get_value_kind(left);
-    if (get_value_kind(right) != kind)
-        return false;
-    switch (kind) {
-    case value_kind::num: return left == right;
-    case value_kind::nil: return is_nil(left);
-    case value_kind::tru: return is_true(left);
-    case value_kind::cons:
-        return equal(unwrap_car(left), unwrap_car(right)) && equal(unwrap_cdr(left), unwrap_cdr(right));
-    case value_kind::string: {
-        obj_str *left_str = unwrap_string(left);
-        obj_str *right_str = unwrap_string(right);
-        return left_str->length == right_str->length && left_str->hash == right_str->hash &&
-               memcmp(left_str->str, right_str->str, left_str->length) == 0;
-    }
-    }
-    __builtin_unreachable();
-}
 
 inline value assoc(value v, value lst) {
-    for (; is_cons(lst); lst = cdr(lst)) {
-        auto it = car(lst);
-        if (equal(car(v), it)) {
+    for (auto it : lst.range()) {
+        if (is_equal(v, car(it))) {
             return it;
         }
     }
     return nil;
+}
+
+template <typename F> inline std::optional<size_t> index_of(value lst, value v, F f) {
+    size_t idx = 0;
+    for (auto it : lst.range()) {
+        if (f(v, it)) {
+            return idx;
+        }
+        ++idx;
+    }
+    return std::nullopt;
+}
+inline std::optional<size_t> index_of(value lst, value v) {
+    return index_of(lst, v, is_equal);
+}
+template <typename F> inline bool member(value v, value lst, F f) {
+    return index_of(lst, v, f).has_value();
+}
+inline bool member(value v, value lst) {
+    return index_of(lst, v).has_value();
+}
+
+inline value range(size_t end) {
+    value head = nil, tail = nil;
+    for (size_t i = 0; i < end; ++i) {
+        add_last(head, tail, make_value(i));
+    }
+    return head;
+}
+inline value range(double start, double end, double step = 1.0) {
+    value head = nil, tail = nil;
+    for (double it = start; it < end; it += step) {
+        add_last(head, tail, make_value(it));
+    }
+    return head;
+}
+template <typename F> inline value build_list(size_t n, F f) {
+    value head = nil, tail = nil;
+    for (size_t i = 0; i < n; ++i) {
+        add_last(head, tail, make_value(f(i)));
+    }
+    return head;
 }
 
 struct context {
@@ -554,6 +751,7 @@ enum class token_kind {
     end,
     num,
     symb,
+    string,
     dot,
     tru,
     lparen,
@@ -569,7 +767,7 @@ struct token {
 };
 
 inline bool is_symbol_breaker(int c) {
-    return isspace(c) || c == ';' || c == '(' || c == ')' || !isprint(c);
+    return isspace(c) || c == ';' || c == '(' || c == ')' || !isprint(c) || c == '"';
 }
 
 struct lexer {
@@ -599,6 +797,31 @@ struct lexer {
                     continue;
                 }
 
+                // Parens
+                if (c == '(') {
+                    next.kind = token_kind::lparen;
+                    return;
+                } else if (c == ')') {
+                    next.kind = token_kind::rparen;
+                    return;
+                }
+
+                if (c == '"') {
+                    for (;;) {
+                        if (cursor >= end) {
+                            throw hl_exception("unterminated string literal");
+                        }
+                        if (*cursor == '"') {
+                            ++cursor;
+                            break;
+                        }
+                        ++cursor;
+                    }
+                    next.kind = token_kind::string;
+                    next.length = cursor - token_start;
+                    return;
+                }
+
                 // Comment
                 if (c == ';') {
                     while (cursor < end && *cursor != '\n') {
@@ -610,15 +833,6 @@ struct lexer {
                     token_start = cursor;
                     next.offset = token_start - input;
                     continue;
-                }
-
-                // Parens
-                if (c == '(') {
-                    next.kind = token_kind::lparen;
-                    return;
-                } else if (c == ')') {
-                    next.kind = token_kind::rparen;
-                    return;
                 }
 
                 // other bogus stuff
@@ -737,6 +951,12 @@ struct reader {
         case token_kind::num: eat_token(); return make_value(tok.f64);
         case token_kind::tru: eat_token(); return tru;
         case token_kind::symb: eat_token(); return new_string(&g_ctx, lex.input + tok.offset, tok.length);
+        case token_kind::string:
+            eat_token();
+            assert(lex.input[tok.offset] == '"');
+            assert(lex.input[tok.offset + tok.length - 1] == '"');
+            assert(tok.length >= 2);
+            return new_string(&g_ctx, lex.input + tok.offset + 1, tok.length - 2);
         case token_kind::lparen: return read_list(); break;
         case token_kind::dot: throw hl_exception("unexpected ."); break;
         case token_kind::rparen: throw hl_exception("stray )"); break;
