@@ -29,7 +29,7 @@ Suppose we have tree-like in-memory data strcture that we want to able to read f
 class Node{};
 class Int : public Node { Int(int x); };
 class Sum : public Node { Sum(Node *left, Node *right); }
-class Mul : public Node { Sum(Node *left, Node *right); }
+class Mul : public Node { Mul(Node *left, Node *right); }
 
 std::string user = "(+ (* 2 3) 8)";
 auto ast = read(user);
@@ -81,7 +81,7 @@ Person p2 { "Adam", "There", 32 };
 auto lst = list(p1, p2);
 std::string serialized = print2s(lst); // (("John", "Here", 23), ("Adam", "There", 32))
 auto deserialized = read(serialized);
-for (Person p : to_range<Person>(deserialized)) {
+for (Person p : list_as_range<Person>(deserialized)) {
     // ...
 }
 

@@ -2,6 +2,7 @@
 #define HEADERLISP_H
 
 #include <assert.h>
+#include <cctype>
 #include <concepts>
 #include <cstdint>
 #include <format>
@@ -11,6 +12,7 @@
 #include <stdint.h>
 #include <string_view>
 #include <type_traits>
+
 namespace headerlisp {
 
 class value {
@@ -51,6 +53,7 @@ enum class value_kind : uint8_t {
 
 struct obj {
     value_kind kind;
+    char _align[7];
     char as[1];
 };
 
@@ -85,11 +88,6 @@ private:
     char msg_[4096];
 };
 
-const char *value_kind_str_(value_kind kind);
-const char *value_kind_str(value value);
-
-value new_symbol(const char *symbol, size_t length);
-value new_symbolz(const char *symbol);
 value new_string(const char *symbol, size_t length);
 value new_stringz(const char *symbol);
 value new_cons(value car, value cdr);
@@ -98,7 +96,7 @@ constexpr uint64_t HL_SIGN_BIT = ((uint64_t)1 << 63);
 constexpr uint64_t HL_QNAN = (uint64_t)0x7ffc000000000000;
 
 constexpr inline value nan_box_singleton(value_kind kind) {
-    return value::make(HL_QNAN | (uint8_t)kind);
+    return value::make(HL_QNAN | (uint64_t)kind);
 }
 
 constexpr inline uint8_t nan_unbox_singleton(value v) {
@@ -126,27 +124,27 @@ constexpr inline bool is_num(value value) {
 constexpr inline bool is_obj(value value) {
     return ((value.internal() & (HL_QNAN | HL_SIGN_BIT)) == (HL_QNAN | HL_SIGN_BIT));
 }
-constexpr inline value_kind get_value_kind(value value) {
-    return is_obj(value) ? nan_unbox_ptr(value)->kind : (value_kind)nan_unbox_singleton(value);
+constexpr inline value_kind get_value_kind(value x) {
+    return is_obj(x) ? nan_unbox_ptr(x)->kind : (value_kind)nan_unbox_singleton(x);
 }
 
-constexpr inline bool is_nil(value value) {
-    return value.internal() == nil.internal();
+constexpr inline bool is_nil(value x) {
+    return x.internal() == nil.internal();
 }
-constexpr inline bool is_true(value value) {
-    return value.internal() == tru.internal();
+constexpr inline bool is_true(value x) {
+    return x.internal() == tru.internal();
 }
 
 constexpr inline bool is_cons(value value) {
     return is_obj(value) && nan_unbox_ptr(value)->kind == value_kind::cons;
 }
 
-constexpr inline bool is_string(value value) {
-    return is_obj(value) && nan_unbox_ptr(value)->kind == value_kind::string;
+constexpr inline bool is_string(value x) {
+    return is_obj(x) && nan_unbox_ptr(x)->kind == value_kind::string;
 }
 
-constexpr inline bool is_list(value value) {
-    return is_cons(value) || is_nil(value);
+constexpr inline bool is_list(value x) {
+    return is_cons(x) || is_nil(x);
 }
 
 inline struct obj_cons *unwrap_cons(value value) {
@@ -164,6 +162,10 @@ inline obj_str *unwrap_string(value value) {
 }
 inline const char *unwrap_zstring(value value) {
     return unwrap_string(value)->str;
+}
+inline std::string_view unwrap_string_view(value value) {
+    obj_str *str = unwrap_string(value);
+    return {str->str, str->length};
 }
 
 inline value unwrap_cdr(value value) {
@@ -194,6 +196,20 @@ inline void unwrap_setcar(value cons, value car) {
 }
 inline void unwrap_setcdr(value cons, value cdr) {
     unwrap_cons(cons)->cdr = cdr;
+}
+
+constexpr std::string_view value_kind_str(value_kind kind) {
+    switch (kind) {
+    case value_kind::num: return "num";
+    case value_kind::nil: return "nil";
+    case value_kind::tru: return "true";
+    case value_kind::cons: return "cons";
+    case value_kind::string: return "string";
+    }
+    __builtin_unreachable();
+}
+constexpr std::string_view value_kind_str(value value) {
+    return value_kind_str(get_value_kind(value));
 }
 
 constexpr inline std::string_view string_view(value x) {
@@ -476,21 +492,11 @@ inline value assoc(value v, value lst) {
     return nil;
 }
 
-inline value s2num(value v);
-inline value num2s(value v);
-
-inline value read(value x);
-inline value print2s(value x);
-inline value print(value x);
-inline value printerr(value x);
-
 struct context {
     char *memory;
     size_t memory_used;
     size_t memory_reserved;
 };
-
-void set_context(context ctx);
 
 namespace internal {
 
@@ -521,11 +527,11 @@ inline value new_string(context *ctx, const char *value, size_t length) {
     assert(length != 0);
     assert(length < UINT32_MAX);
 
-    void *memory = alloc(ctx, sizeof(obj) + offsetof(obj_str, str) + length + 1);
+    void *memory = alloc(ctx, offsetof(obj, as) + offsetof(obj_str, str) + length + 1);
     obj *header = (obj *)memory;
     header->kind = value_kind::string;
 
-    obj_str *str = (obj_str *)(void *)(header + 1);
+    obj_str *str = (obj_str *)(void *)(header->as);
     str->length = length;
     str->hash = djb2(value, value + length);
     memcpy(str->str, value, length);
@@ -535,16 +541,261 @@ inline value new_string(context *ctx, const char *value, size_t length) {
 }
 
 inline value new_cons(context *ctx, value car, value cdr) {
-    void *memory = alloc(ctx, sizeof(obj) + sizeof(obj_cons));
+    void *memory = alloc(ctx, offsetof(obj, as) + sizeof(obj_cons));
     obj *header = (obj *)memory;
     header->kind = value_kind::cons;
-    obj_cons *cons = (obj_cons *)(void *)(header + 1);
+    obj_cons *cons = (obj_cons *)(void *)(header->as);
     cons->car = car;
     cons->cdr = cdr;
     return nan_box_ptr(header);
 }
 
+enum class token_kind {
+    end,
+    num,
+    symb,
+    dot,
+    tru,
+    lparen,
+    rparen,
+    unexpected
+};
+
+struct token {
+    token_kind kind;
+    size_t offset;
+    size_t length;
+    double f64;
+};
+
+inline bool is_symbol_breaker(int c) {
+    return isspace(c) || c == ';' || c == '(' || c == ')' || !isprint(c);
+}
+
+struct lexer {
+    const char *input;
+    const char *end;
+    const char *cursor;
+    token next;
+
+    void advance() {
+        const char *token_start = cursor;
+        next.offset = token_start - input;
+        for (;;) {
+            if (cursor >= end) {
+                next.kind = token_kind::end;
+                return;
+            }
+            int c = *cursor++;
+
+            // Spaces
+            if (is_symbol_breaker(c)) {
+                if (isspace(c)) {
+                    while (isspace(*cursor)) {
+                        ++cursor;
+                    }
+                    token_start = cursor;
+                    next.offset = token_start - input;
+                    continue;
+                }
+
+                // Comment
+                if (c == ';') {
+                    while (cursor < end && *cursor != '\n') {
+                        ++cursor;
+                    }
+                    if (*cursor == '\n') {
+                        ++cursor;
+                    }
+                    token_start = cursor;
+                    next.offset = token_start - input;
+                    continue;
+                }
+
+                // Parens
+                if (c == '(') {
+                    next.kind = token_kind::lparen;
+                    return;
+                } else if (c == ')') {
+                    next.kind = token_kind::rparen;
+                    return;
+                }
+
+                // other bogus stuff
+                for (;;) {
+                    c = *cursor++;
+                    if (isprint(c)) {
+                        --cursor;
+                        break;
+                    }
+                }
+                next.kind = token_kind::unexpected;
+                next.length = cursor - token_start;
+                return;
+            }
+
+            for (;;) {
+                c = *cursor++;
+                if (is_symbol_breaker(c)) {
+                    --cursor;
+                    break;
+                }
+            }
+            size_t length = cursor - token_start;
+            if (length == 1 && *token_start == '.') {
+                next.kind = token_kind::dot;
+                return;
+            } else if (length == 1 && *token_start == 't') {
+                next.kind = token_kind::tru;
+                return;
+            }
+
+            char *strtod_end = nullptr;
+            double f64 = strtod(token_start, &strtod_end);
+            if (strtod_end == cursor) {
+                next.kind = token_kind::num;
+                next.f64 = f64;
+                return;
+            }
+
+            next.kind = token_kind::symb;
+            next.length = cursor - token_start;
+            return;
+        }
+    }
+};
+
+struct reader {
+    lexer &lex;
+    const token &tok;
+    bool should_return_old_token = false;
+
+    reader(lexer &lex) : lex(lex), tok(lex.next) {}
+
+    void peek_token() {
+        if (should_return_old_token) {
+            return;
+        }
+        for (;;) {
+            lex.advance();
+            if (tok.kind == token_kind::unexpected) {
+                throw hl_exception("unexpected token");
+            }
+            break;
+        }
+        should_return_old_token = true;
+    }
+
+    void eat_token() { should_return_old_token = false; }
+
+    value read_list() {
+        peek_token();
+        // This should be guaranteed by caller.
+        assert(tok.kind == token_kind::lparen);
+        eat_token();
+
+        peek_token();
+        // Handle nil
+        if (tok.kind == token_kind::rparen) {
+            eat_token();
+            return nil;
+        }
+
+        value list_head, list_tail;
+        list_head = list_tail = new_cons(read_expr(), nil);
+        // Now enter the loop of parsing other list elements.
+        for (;;) {
+            peek_token();
+            if (tok.kind == token_kind::end) {
+                throw hl_exception("Missing closing paren when reading list (eof encountered)");
+            }
+            if (tok.kind == token_kind::rparen) {
+                eat_token();
+                return list_head;
+            }
+            if (tok.kind == token_kind::dot) {
+                eat_token();
+                unwrap_setcdr(list_tail, read_expr());
+                peek_token();
+                if (tok.kind != token_kind::rparen) {
+                    throw hl_exception("Missing closing paren after dot when reading list");
+                }
+                return list_head;
+            }
+
+            value ast = read_expr();
+            value cons = new_cons(ast, nil);
+            unwrap_setcdr(list_tail, cons);
+            list_tail = cons;
+        }
+    }
+
+    value read_expr() {
+        peek_token();
+        switch (tok.kind) {
+        case token_kind::end: break;
+        case token_kind::num: eat_token(); return make_value(tok.f64);
+        case token_kind::tru: eat_token(); return tru;
+        case token_kind::symb: eat_token(); return new_string(&g_ctx, lex.input + tok.offset, tok.length);
+        case token_kind::lparen: return read_list(); break;
+        case token_kind::dot: throw hl_exception("unexpected ."); break;
+        case token_kind::rparen: throw hl_exception("stray )"); break;
+        case token_kind::unexpected: break;
+        }
+        __builtin_unreachable();
+    }
+};
+
 } // namespace internal
+
+inline void set_context(context ctx) {
+    internal::g_ctx = ctx;
+}
+
+inline value new_cons(value car, value cdr) {
+    return internal::new_cons(&internal::g_ctx, car, cdr);
+}
+inline value new_string(const char *value, size_t length) {
+    return internal::new_string(&internal::g_ctx, value, length);
+}
+
+inline value read(const char *s, size_t length) {
+    internal::lexer lexer{s, s + length, s, {}};
+    internal::reader reader{lexer};
+
+    return reader.read_expr();
+}
+inline value read(std::string_view s) {
+    return read(s.data(), s.length());
+}
+
+inline std::string print(value x) {
+    switch (get_value_kind(x)) {
+    case value_kind::num: return std::format("{:g}", x.unsafe_f64());
+    case value_kind::nil: return "()";
+    case value_kind::tru: return "t";
+    case value_kind::cons: {
+        std::string result = "(";
+        while (is_cons(x)) {
+            result += print(unwrap_car(x));
+
+            value cdr = unwrap_cdr(x);
+            if (!is_list(cdr)) {
+                result += " . ";
+                result += print(cdr);
+                break;
+            }
+            if (!is_nil(cdr)) {
+                result += " ";
+            }
+            x = cdr;
+        }
+        return result + ")";
+    }
+    case value_kind::string: return std::format("\"{}\"", unwrap_string_view(x));
+    }
+}
+
 } // namespace headerlisp
 
 #endif
