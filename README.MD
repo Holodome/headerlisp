@@ -79,9 +79,9 @@ void from_list(const auto &lst, Person &person) {
 Person p1 { "John", "Here", 23 };
 Person p2 { "Adam", "There", 32 };
 auto lst = list(p1, p2);
-std::string serialized = print2s(lst); // (("John", "Here", 23), ("Adam", "There", 32))
+std::string serialized = print(lst); // (("John", "Here", 23), ("Adam", "There", 32))
 auto deserialized = read(serialized);
-for (Person p : list_as_range<Person>(deserialized)) {
+for (Person p : deserialized.iter().as<Person>()) {
     // ...
 }
 

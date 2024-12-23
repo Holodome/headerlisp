@@ -40,7 +40,7 @@ public:
         return result;
     }
 
-    value_range range();
+    value_range iter();
 
 private:
     constexpr value(constructor_tag, uint64_t x) : u64_(x) {}
@@ -80,6 +80,18 @@ struct obj_str {
     char str[1];
 };
 
+template <typename T> struct to_list {};
+template <typename T> struct from_list {};
+
+template <typename T>
+concept has_to_list = requires(T a) {
+    { to_list<T>{}(a) } -> std::same_as<value>;
+};
+template <typename T>
+concept has_from_list = requires {
+    { from_list<T>{}(value{}) } -> std::same_as<T>;
+};
+
 class hl_exception : public std::exception {
 public:
     hl_exception() = delete;
@@ -95,8 +107,8 @@ private:
     char msg_[4096];
 };
 
-value new_string(const char *symbol, size_t length);
-value new_stringz(const char *symbol);
+value new_string(const char *str, size_t length);
+value new_stringz(const char *str);
 value new_cons(value car, value cdr);
 
 constexpr uint64_t HL_SIGN_BIT = ((uint64_t)1 << 63);
@@ -170,6 +182,7 @@ inline obj_str *unwrap_string(value value) {
 inline const char *unwrap_zstring(value value) {
     return unwrap_string(value)->str;
 }
+
 inline std::string_view unwrap_string_view(value value) {
     obj_str *str = unwrap_string(value);
     return {str->str, str->length};
@@ -221,20 +234,20 @@ constexpr std::string_view value_kind_str(value value) {
 
 constexpr inline std::string_view string_view(value x) {
     if (!is_string(x))
-        throw hl_exception("called 'symb_view()' on non-symbol value {}", value_kind_str(x));
+        throw hl_exception("called 'string_view()' on non-string value {}", value_kind_str(x));
     obj_str *str = unwrap_string(x);
     return std::string_view{str->str, str->length};
 }
-inline double num_dbl(value x) {
+inline double as_num_dbl(value x) {
     if (!is_num(x))
-        throw hl_exception("called 'num_dbl() on non-symbol value {}", value_kind_str(x));
+        throw hl_exception("called 'num_dbl() on non-number value {}", value_kind_str(x));
     return unwrap_num(x);
 }
-inline int64_t num_i64(value x) {
-    return (int64_t)num_dbl(x);
+inline int64_t as_num_i64(value x) {
+    return (int64_t)as_num_dbl(x);
 }
-inline int num_int(value x) {
-    return (int)num_i64(x);
+inline int as_num_int(value x) {
+    return (int)as_num_i64(x);
 }
 
 inline value &car(value x) {
@@ -247,6 +260,12 @@ inline value &cdr(value x) {
         throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
     return unwrap_cdr(x);
 }
+inline std::string_view as_string_view(value x) {
+    if (!is_string(x))
+        throw hl_exception("called 'as_string' on non-string {}", value_kind_str(x));
+    return unwrap_string_view(x);
+}
+
 // clang-format off
 inline value caar(value x) { return car(car(x)); }
 inline value cadr(value x) { return car(cdr(x)); }
@@ -293,29 +312,59 @@ inline value tenth(value x) { return cadr(cdddr(cddddr(x))); }
 // clang-format on
 
 inline bool operator==(value left, value right) {
-    if (!is_num(left))
-        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
-    if (!is_num(right))
-        throw hl_exception("'==' called on non-number {}", value_kind_str(right));
-    return left.unsafe_f64() == right.unsafe_f64();
+    if (is_num(left) || is_num(right)) {
+        if (!is_num(left))
+            throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+        if (!is_num(right))
+            throw hl_exception("'==' called on non-number {}", value_kind_str(right));
+        return left.unsafe_f64() == right.unsafe_f64();
+    }
+    if (is_string(left) || is_string(right)) {
+        if (!is_string(left))
+            throw hl_exception("'==' called on non-string {}", value_kind_str(left));
+        if (!is_string(right))
+            throw hl_exception("'==' called on non-string {}", value_kind_str(right));
+        return unwrap_string_view(left) == unwrap_string_view(right);
+    }
+    throw hl_exception("unexpected types for '==' {} {}", value_kind_str(left), value_kind_str(right));
 }
-inline bool operator==(value left, double x) {
+inline bool operator==(value left, double right) {
     if (!is_num(left))
         throw hl_exception("'==' called on non-number {}", value_kind_str(left));
-    return left.unsafe_f64() == x;
+    return left.unsafe_f64() == right;
+}
+inline bool operator==(value left, std::string_view right) {
+    if (!is_string(left))
+        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+    return unwrap_string_view(left) == right;
 }
 
 inline bool operator!=(value left, value right) {
-    if (!is_num(left))
-        throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
-    if (!is_num(right))
-        throw hl_exception("'!=' called on non-number {}", value_kind_str(right));
-    return left.unsafe_f64() != right.unsafe_f64();
+    if (is_num(left) || is_num(right)) {
+        if (!is_num(left))
+            throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
+        if (!is_num(right))
+            throw hl_exception("'!=' called on non-number {}", value_kind_str(right));
+        return left.unsafe_f64() != right.unsafe_f64();
+    }
+    if (is_string(left) || is_string(right)) {
+        if (!is_string(left))
+            throw hl_exception("'!=' called on non-string {}", value_kind_str(left));
+        if (!is_string(right))
+            throw hl_exception("'!=' called on non-string {}", value_kind_str(right));
+        return unwrap_string_view(left) != unwrap_string_view(right);
+    }
+    throw hl_exception("unexpected types for '!=' {} {}", value_kind_str(left), value_kind_str(right));
 }
 inline bool operator!=(value left, double x) {
     if (!is_num(left))
         throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
     return left.unsafe_f64() != x;
+}
+inline bool operator!=(value left, std::string_view right) {
+    if (!is_num(left))
+        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+    return unwrap_string_view(left) != right;
 }
 
 inline bool is_equal(value left, value right) {
@@ -367,6 +416,63 @@ private:
     value current_;
 };
 
+template <has_from_list T> class deserializing_value_iter {
+public:
+    using difference_type = ptrdiff_t;
+    using value_type = T;
+    using pointer = T *;
+    using reference = T &;
+    using iterator_category = std::forward_iterator_tag;
+
+    deserializing_value_iter() = delete;
+    deserializing_value_iter(const deserializing_value_iter &) = default;
+    deserializing_value_iter(deserializing_value_iter &&) = default;
+    deserializing_value_iter &operator=(const deserializing_value_iter &) = default;
+    deserializing_value_iter &operator=(deserializing_value_iter &&) = default;
+
+    explicit deserializing_value_iter(value x) : current_(x) { update_current_value(); }
+
+    reference operator*() { return current_value_; }
+    bool operator==(deserializing_value_iter other) { return current_.internal() == other.current_.internal(); }
+
+    deserializing_value_iter operator++(int) {
+        auto tmp = *this;
+        ++(*this);
+        return tmp;
+    }
+    deserializing_value_iter &operator++() {
+        current_ = cdr(current_);
+        update_current_value();
+        return *this;
+    }
+
+private:
+    void update_current_value() {
+        if (!is_nil(current_))
+            current_value_ = from_list<T>{}(car(current_));
+    }
+
+    value current_;
+    T current_value_;
+};
+
+template <has_from_list T> class deserializing_value_range {
+public:
+    deserializing_value_range() = delete;
+    deserializing_value_range(const deserializing_value_range &) = default;
+    deserializing_value_range(deserializing_value_range &&) = default;
+    deserializing_value_range &operator=(const deserializing_value_range &) = default;
+    deserializing_value_range &operator=(deserializing_value_range &&) = default;
+
+    explicit deserializing_value_range(value x) : start_(x) {}
+
+    deserializing_value_iter<T> begin() { return deserializing_value_iter<T>{start_}; }
+    deserializing_value_iter<T> end() { return deserializing_value_iter<T>{nil}; }
+
+private:
+    value start_;
+};
+
 class value_range {
 public:
     value_range() = delete;
@@ -380,11 +486,13 @@ public:
     value_iter begin() { return value_iter{start_}; }
     value_iter end() { return value_iter{nil}; }
 
+    template <typename T> deserializing_value_range<T> as() { return deserializing_value_range<T>(start_); }
+
 private:
     value start_;
 };
 
-inline value_range value::range() {
+inline value_range value::iter() {
     return value_range(*this);
 }
 
@@ -397,7 +505,7 @@ inline value nth(value lst, size_t idx) {
 
 inline size_t length(value lst) {
     size_t len = 0;
-    for (auto it : lst.range()) {
+    for (auto it : lst.iter()) {
         (void)it;
         ++len;
     }
@@ -414,10 +522,8 @@ inline void add_last(value &first, value &last, value x) {
     }
 }
 
-template <typename T>
-    requires std::convertible_to<T, double>
-inline value make_value(T x) {
-    return value(static_cast<double>(x));
+inline value make_value(double x) {
+    return value(x);
 }
 inline value make_value(nullptr_t) {
     return nil;
@@ -427,6 +533,9 @@ inline value make_value(std::string_view s) {
 }
 inline value make_value(value x) {
     return x;
+}
+template <has_to_list T> inline value make_value(T x) {
+    return to_list<T>{}(x);
 }
 
 template <typename... Args> inline value list(Args &&...args) {
@@ -439,10 +548,10 @@ template <typename... Args> inline value list(Args &&...args) {
 inline value append(value a, value b) {
     value result = nil;
     value result_tail = nil;
-    for (value x : a.range()) {
+    for (value x : a.iter()) {
         add_last(result, result_tail, x);
     }
-    for (value x : b.range()) {
+    for (value x : b.iter()) {
         add_last(result, result_tail, x);
     }
     return result;
@@ -450,13 +559,13 @@ inline value append(value a, value b) {
 inline value append(value a, value b, value c) {
     value result = nil;
     value result_tail = nil;
-    for (value x : a.range()) {
+    for (value x : a.iter()) {
         add_last(result, result_tail, x);
     }
-    for (value x : b.range()) {
+    for (value x : b.iter()) {
         add_last(result, result_tail, x);
     }
-    for (value x : c.range()) {
+    for (value x : c.iter()) {
         add_last(result, result_tail, x);
     }
     return result;
@@ -465,7 +574,7 @@ inline value append(value a, value b, value c) {
 template <typename F> inline value map(F f, value lst) {
     auto new_lst = nil;
     auto new_lst_end = nil;
-    for (auto it : lst.range()) {
+    for (auto it : lst.iter()) {
         add_last(new_lst, new_lst_end, make_value(f(it)));
     }
     return new_lst;
@@ -481,7 +590,7 @@ template <typename F> inline value map(F f, value lst1, value lst2) {
     return new_lst;
 }
 template <typename F> inline bool all(F f, value lst) {
-    for (auto it : lst.range()) {
+    for (auto it : lst.iter()) {
         if (!f(it)) {
             return false;
         }
@@ -489,7 +598,7 @@ template <typename F> inline bool all(F f, value lst) {
     return true;
 }
 template <typename F> inline bool any(F f, value lst) {
-    for (auto it : lst.range()) {
+    for (auto it : lst.iter()) {
         if (f(it)) {
             return true;
         }
@@ -499,7 +608,7 @@ template <typename F> inline bool any(F f, value lst) {
 
 template <typename F> inline value foldl(F f, value init, value lst) {
     value result = init;
-    for (auto it : lst.range()) {
+    for (auto it : lst.iter()) {
         result = make_value(f(it, result));
     }
     return result;
@@ -527,7 +636,7 @@ template <typename F> inline value foldr(F f, value init, value lst1, value lst2
 }
 inline value reverse(value lst) {
     value result = nil;
-    for (auto it : lst.range()) {
+    for (auto it : lst.iter()) {
         result = new_cons(it, result);
     }
     return result;
@@ -536,7 +645,7 @@ inline value reverse(value lst) {
 template <typename F> inline value filter(F f, value lst) {
     value new_lst = nil;
     value new_lst_end = nil;
-    for (auto it : lst.range()) {
+    for (auto it : lst.iter()) {
         if (f(it)) {
             add_last(new_lst, new_lst_end, it);
         }
@@ -551,7 +660,7 @@ template <typename F> inline value filter_not(F f, value lst) {
 template <typename F> inline value remove(value x, value lst, F f) {
     value new_lst = nil;
     value new_lst_end = nil;
-    for (auto it : lst.range()) {
+    for (auto it : lst.iter()) {
         if (!f(x, it)) {
             add_last(new_lst, new_lst_end, it);
         }
@@ -564,8 +673,8 @@ inline value remove(value x, value lst) {
 
 inline value cartesian_product(value lst1, value lst2) {
     value head = nil, tail = nil;
-    for (auto it1 : lst1.range()) {
-        for (auto it2 : lst2.range()) {
+    for (auto it1 : lst1.iter()) {
+        for (auto it2 : lst2.iter()) {
             add_last(head, tail, list(it1, it2));
         }
     }
@@ -573,9 +682,9 @@ inline value cartesian_product(value lst1, value lst2) {
 }
 inline value cartesian_product(value lst1, value lst2, value lst3) {
     value head = nil, tail = nil;
-    for (auto it1 : lst1.range()) {
-        for (auto it2 : lst2.range()) {
-            for (auto it3 : lst3.range()) {
+    for (auto it1 : lst1.iter()) {
+        for (auto it2 : lst2.iter()) {
+            for (auto it3 : lst3.iter()) {
                 add_last(head, tail, list(it1, it2, it3));
             }
         }
@@ -639,7 +748,7 @@ inline value operator/(value left, value right) {
 }
 
 inline value assoc(value v, value lst) {
-    for (auto it : lst.range()) {
+    for (auto it : lst.iter()) {
         if (is_equal(v, car(it))) {
             return it;
         }
@@ -649,7 +758,7 @@ inline value assoc(value v, value lst) {
 
 template <typename F> inline std::optional<size_t> index_of(value lst, value v, F f) {
     size_t idx = 0;
-    for (auto it : lst.range()) {
+    for (auto it : lst.iter()) {
         if (f(v, it)) {
             return idx;
         }
