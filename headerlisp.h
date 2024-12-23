@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 namespace headerlisp {
 
@@ -799,9 +800,9 @@ template <typename F> inline value build_list(size_t n, F f) {
 }
 
 struct context {
-    char *memory;
-    size_t memory_used;
-    size_t memory_reserved;
+    char *memory = nullptr;
+    size_t memory_used = 0;
+    size_t memory_reserved = 0;
 };
 
 namespace internal {
@@ -1080,6 +1081,23 @@ struct reader {
 inline void set_context(context ctx) {
     internal::g_ctx = ctx;
 }
+
+class context_guard {
+public:
+    context_guard(const context_guard &) = delete;
+    context_guard(context_guard &&) = default;
+    context_guard &operator=(const context_guard &) = delete;
+    context_guard &operator=(context_guard &&) = default;
+
+    context_guard() : context_guard(1 << 20) {}
+    explicit context_guard(size_t size) : memory_(size) {
+        set_context(context{(char *)memory_.data(), 0, memory_.size()});
+    }
+    ~context_guard() { set_context(context{}); }
+
+private:
+    std::vector<uint8_t> memory_{};
+};
 
 inline value new_cons(value car, value cdr) {
     return internal::new_cons(&internal::g_ctx, car, cdr);
