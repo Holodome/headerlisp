@@ -38,7 +38,7 @@ void tagged_test() {
     std::cout << serialized << "\n";
     auto deserialized = read(serialized); // ((num . 1) (string . "hello") (person "John" "Here" 23) (person "Adam" "There" 32))
     std::cout << print(deserialized) << "\n";
-    for (auto it : deserialized.iter().as_sum<Person, int, std::string_view>()) {
+    for (auto it : deserialized.iter().any_of<Person, int, std::string_view>()) {
         if (it.is_a<Person>()) {
             auto p = it.get<Person>();
             std::cout << std::format("Person(name={},address={},age={})\n", p.name, p.address, p.age);

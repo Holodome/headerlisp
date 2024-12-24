@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
-#include <iostream>
 #include <iterator>
 #include <new>
 #include <stddef.h>
@@ -47,7 +46,7 @@ enum class value_kind : uint8_t {
     num = 0x0,
     nil = 0x1,
     tru = 0x2,
-    // Heap-allocated garbage-collected values
+    // Heap-allocated values
     cons = 0x3,
     string = 0x4,
 };
@@ -618,7 +617,7 @@ public:
     value_iter end() { return value_iter{nil}; }
 
     template <has_from_list T> deserializing_value_range<T> as() { return deserializing_value_range<T>(start_); }
-    template <has_list_tag... Args> deserializing_sum_value_range<Args...> as_sum() {
+    template <has_list_tag... Args> deserializing_sum_value_range<Args...> any_of() {
         return deserializing_sum_value_range<Args...>(start_);
     }
 
