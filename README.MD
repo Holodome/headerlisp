@@ -43,7 +43,7 @@ There are three main use cases for headerlisp:
         // All memory is freed here
     }
     ```
-4. All lists are implemented as cons pairs. There are no optimizations to use constant-time access. Type checking is at every API call.
-5. User-defined types are supported using traits. 
+4. All lists are implemented as cons pairs. There are no optimizations to use constant-time access. Type checking is done at every API call.
+5. User-defined types are supported using traits (see [serialize.cpp](examples/serialize.cpp) and [wire.cpp](examples/wire.cpp)). 
 6. Exceptions are used to report errors.
 7. Strings are always copied inside headerlisp memory context.
