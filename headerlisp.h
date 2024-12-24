@@ -19,6 +19,16 @@ namespace headerlisp {
 class value;
 class value_range;
 
+enum class value_kind : uint8_t {
+    // Singleton values. These are not heap-allocated.
+    num = 0x0,
+    nil = 0x1,
+    tru = 0x2,
+    // Heap-allocated values
+    cons = 0x3,
+    string = 0x4,
+};
+
 class value {
     struct constructor_tag {};
 
@@ -41,36 +51,19 @@ private:
     uint64_t u64_;
 };
 
-enum class value_kind : uint8_t {
-    // Singleton values. These are not heap-allocated.
-    num = 0x0,
-    nil = 0x1,
-    tru = 0x2,
-    // Heap-allocated values
-    cons = 0x3,
-    string = 0x4,
-};
+class hl_exception : public std::exception {
+public:
+    hl_exception() = delete;
+    explicit hl_exception(const char *reason) { snprintf(msg_, sizeof(msg_), "%s", reason); }
+    explicit hl_exception(std::string_view reason) { snprintf(msg_, sizeof(msg_), "%s", reason.data()); }
+    template <typename... Args> explicit hl_exception(std::format_string<Args...> fmt, Args &&...args) {
+        std::format_to_n(msg_, sizeof(msg_), fmt, std::forward<Args>(args)...);
+    }
 
-struct obj {
-    value_kind kind;
-    char _align[7];
-    char as[1];
-};
+    const char *what() const noexcept override { return msg_; }
 
-struct obj_cons {
-    value car;
-    value cdr;
-};
-
-struct obj_env {
-    value vars;
-    value up;
-};
-
-struct obj_str {
-    size_t length;
-    uint32_t hash;
-    char str[1];
+private:
+    char msg_[4096];
 };
 
 template <typename T> struct to_list {};
@@ -105,33 +98,220 @@ template <> struct list_tag<int64_t> {
     constexpr static inline std::string_view tag = "num";
 };
 
-class hl_exception : public std::exception {
-public:
-    hl_exception() = delete;
-    explicit hl_exception(const char *reason) { snprintf(msg_, sizeof(msg_), "%s", reason); }
-    explicit hl_exception(std::string_view reason) { snprintf(msg_, sizeof(msg_), "%s", reason.data()); }
-    template <typename... Args> explicit hl_exception(std::format_string<Args...> fmt, Args &&...args) {
-        std::format_to_n(msg_, sizeof(msg_), fmt, std::forward<Args>(args)...);
-    }
-
-    const char *what() const noexcept override { return msg_; }
-
-private:
-    char msg_[4096];
-};
-
 value new_string(const char *str, size_t length);
 value new_stringz(const char *str);
 value cons(value car, value cdr);
 
+struct obj {
+    value_kind kind;
+    char _align[7];
+    char as[1];
+};
+
+struct obj_cons {
+    value car;
+    value cdr;
+};
+
+struct obj_env {
+    value vars;
+    value up;
+};
+
+struct obj_str {
+    size_t length;
+    uint32_t hash;
+    char str[1];
+};
+
+//
+// Value constructors
+//
+
+// There are more overloads for this function below
+inline value make_value(value x);
+template <has_list_tag T> inline value make_tagged_value(T &&t);
+
+inline value new_string(const char *str, size_t length);
+inline value new_stringz(const char *str);
+inline value cons(value car, value cdr);
+
+template <typename... Args> inline value list(Args &&...args);
+template <has_list_tag... Args> inline value tagged_list(Args &&...args);
+
+//
+// Type checkers
+//
+constexpr std::string_view value_kind_str(value_kind kind);
+constexpr std::string_view value_kind_str(value value);
+constexpr value_kind get_value_kind(value x);
+constexpr bool is_num(value x);
+constexpr bool is_obj(value x);
+constexpr bool is_nil(value x);
+constexpr bool is_true(value x);
+constexpr bool is_cons(value x);
+// is_nil || is_cons
+constexpr bool is_list(value x);
+
+//
+// Unsafe functions that unwrap inner storage with assumption that type is correct
+//
+inline std::string_view unwrap_string_view(value value);
+inline value &unwrap_cdr(value value);
+inline value &unwrap_car(value value);
+inline double unwrap_f64(value value);
+// Unsafe cons mutators
+inline void unwrap_setcar(value cons, value car);
+inline void unwrap_setcdr(value cons, value cdr);
+
+//
+// Checked data access
+//
+inline std::string_view as_string_view(value x);
+inline double as_num_f64(value x);
+inline int64_t as_num_i64(value x);
+inline int as_num_int(value x);
+inline value &car(value x);
+inline value &cdr(value x);
+
+struct cons_unapply_result {
+    value &car, &cdr;
+};
+inline cons_unapply_result unapply_cons(value x);
+
+//
+// Library list accessors
+//
+inline value caar(value x);
+inline value cadr(value x);
+inline value cdar(value x);
+inline value cddr(value x);
+inline value caaar(value x);
+inline value caadr(value x);
+inline value cadar(value x);
+inline value caddr(value x);
+inline value cdaar(value x);
+inline value cdadr(value x);
+inline value cddar(value x);
+inline value cdddr(value x);
+inline value caaaar(value x);
+inline value caaadr(value x);
+inline value caadar(value x);
+inline value caaddr(value x);
+inline value cadaar(value x);
+inline value cadadr(value x);
+inline value caddar(value x);
+inline value cadddr(value x);
+inline value cdaaar(value x);
+inline value cdaadr(value x);
+inline value cdadar(value x);
+inline value cdaddr(value x);
+inline value cddaar(value x);
+inline value cddadr(value x);
+inline value cdddar(value x);
+inline value cddddr(value x);
+
+inline value head(value x);
+inline value rest(value x);
+inline value first(value x);
+inline value second(value x);
+inline value third(value x);
+inline value fourth(value x);
+inline value fifth(value x);
+inline value sixth(value x);
+inline value seventh(value x);
+inline value eighth(value x);
+inline value ninth(value x);
+inline value tenth(value x);
+
+struct list_bind_2 {
+    value a, b;
+};
+struct list_bind_3 {
+    value a, b, c;
+};
+struct list_bind_4 {
+    value a, b, c, d;
+};
+
+inline list_bind_2 first_2(value x);
+inline list_bind_3 first_3(value x);
+inline list_bind_4 first_4(value x);
+
+inline size_t length(value lst);
+
+//
+// Library list manipulation
+//
+inline void add_last(value &first, value &last, value x);
+inline value reverse(value lst);
+
+inline value append(value a, value b);
+inline value append(value a, value b, value c);
+template <typename F> inline value map(F f, value lst);
+template <typename F> inline value map(F f, value lst1, value lst2);
+template <typename F> inline bool all(F f, value lst);
+template <typename F> inline bool any(F f, value lst);
+template <typename F> inline value foldl(F f, value init, value lst);
+template <typename F> inline value foldl(F f, value init, value lst1, value lst2);
+template <typename F> inline value foldr(F f, value init, value lst);
+template <typename F> inline value foldr(F f, value init, value lst1, value lst2);
+template <typename F> inline value filter(F f, value lst);
+template <typename F> inline value filter_not(F f, value lst);
+template <typename F> inline value remove(value x, value lst, F f);
+inline value remove(value x, value lst);
+inline value cartesian_product(value lst1, value lst2);
+inline value cartesian_product(value lst1, value lst2, value lst3);
+
+inline value assoc(value v, value lst);
+inline value nth(value lst, size_t idx);
+template <typename F> inline std::optional<size_t> index_of(value lst, value v, F f);
+inline std::optional<size_t> index_of(value lst, value v);
+template <typename F> inline bool member(value v, value lst, F f);
+inline bool member(value v, value lst);
+inline value range(size_t end);
+inline value range(double start, double end, double step = 1.0);
+template <typename F> inline value build_list(size_t n, F f);
+
+//
+// Predicates
+//
+inline bool is_even(value x);
+inline bool is_odd(value x);
+inline bool is_zero(value x);
+inline bool is_positive(value x);
+inline bool is_negative(value x);
+
+//
+// Equality and operator overloading
+//
+inline bool is_equal(value left, value right);
+
+inline bool operator==(value left, value right);
+inline bool operator==(value left, double right);
+inline bool operator==(value left, std::string_view right);
+
+inline bool operator!=(value left, value right);
+inline bool operator!=(value left, double right);
+inline bool operator!=(value left, std::string_view right);
+
+inline value operator+(value left, value right);
+inline value operator+(value left, double right);
+inline value operator-(value left, value right);
+inline value operator-(value left, double right);
+inline value operator*(value left, value right);
+inline value operator*(value left, double right);
+inline value operator/(value left, value right);
+inline value operator/(value left, double right);
+
 constexpr uint64_t HL_SIGN_BIT = ((uint64_t)1 << 63);
 constexpr uint64_t HL_QNAN = (uint64_t)0x7ffc000000000000;
 
-constexpr inline value nan_box_singleton(value_kind kind) {
+constexpr value nan_box_singleton(value_kind kind) {
     return value::make(HL_QNAN | (uint64_t)kind);
 }
 
-constexpr inline uint8_t nan_unbox_singleton(value v) {
+constexpr uint8_t nan_unbox_singleton(value v) {
     return v.internal() & ~(HL_QNAN);
 }
 
@@ -150,32 +330,32 @@ constexpr value::value() {
     this->u64_ = nil.u64_;
 }
 
-constexpr inline bool is_num(value value) {
-    return (value.internal() & HL_QNAN) != HL_QNAN;
+constexpr bool is_num(value x) {
+    return (x.internal() & HL_QNAN) != HL_QNAN;
 }
-constexpr inline bool is_obj(value value) {
-    return ((value.internal() & (HL_QNAN | HL_SIGN_BIT)) == (HL_QNAN | HL_SIGN_BIT));
+constexpr bool is_obj(value x) {
+    return ((x.internal() & (HL_QNAN | HL_SIGN_BIT)) == (HL_QNAN | HL_SIGN_BIT));
 }
-constexpr inline value_kind get_value_kind(value x) {
+constexpr value_kind get_value_kind(value x) {
     return is_obj(x) ? nan_unbox_ptr(x)->kind : (value_kind)nan_unbox_singleton(x);
 }
 
-constexpr inline bool is_nil(value x) {
+constexpr bool is_nil(value x) {
     return x.internal() == nil.internal();
 }
-constexpr inline bool is_true(value x) {
+constexpr bool is_true(value x) {
     return x.internal() == tru.internal();
 }
 
-constexpr inline bool is_cons(value value) {
-    return is_obj(value) && nan_unbox_ptr(value)->kind == value_kind::cons;
+constexpr bool is_cons(value x) {
+    return is_obj(x) && nan_unbox_ptr(x)->kind == value_kind::cons;
 }
 
-constexpr inline bool is_string(value x) {
+constexpr bool is_string(value x) {
     return is_obj(x) && nan_unbox_ptr(x)->kind == value_kind::string;
 }
 
-constexpr inline bool is_list(value x) {
+constexpr bool is_list(value x) {
     return is_cons(x) || is_nil(x);
 }
 
@@ -263,9 +443,6 @@ inline value &cdr(value x) {
         throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
     return unwrap_cdr(x);
 }
-struct cons_unapply_result {
-    value &car, &cdr;
-};
 inline cons_unapply_result unapply_cons(value x) {
     if (!is_cons(x))
         throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
@@ -332,10 +509,6 @@ inline value seventh(value x) { return caddr(cddddr(x)); }
 inline value eighth(value x) { return cadddr(cddddr(x)); }
 inline value ninth(value x) { return car(cdddr(cddddr(x))); }
 inline value tenth(value x) { return cadr(cdddr(cddddr(x))); }
-
-struct list_bind_2 { value a, b; };
-struct list_bind_3 { value a, b, c; };
-struct list_bind_4 { value a, b, c, d; };
 
 inline list_bind_2 first_2(value x) {
     return {first(x), second(x)};
@@ -957,7 +1130,7 @@ inline value range(size_t end) {
     }
     return head;
 }
-inline value range(double start, double end, double step = 1.0) {
+inline value range(double start, double end, double step) {
     value head = nil, tail = nil;
     for (double it = start; it < end; it += step) {
         add_last(head, tail, make_value(it));
