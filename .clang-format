@@ -1,0 +1,10 @@
+BasedOnStyle: llvm
+ColumnLimit: 120
+IndentWidth: 4
+AllowShortIfStatementsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Always
+AllowShortFunctionsOnASingleLine: All
+AllowShortLoopsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: true
+AccessModifierOffset: -4

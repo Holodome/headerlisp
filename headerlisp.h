@@ -3,7 +3,6 @@
 
 #include <assert.h>
 #include <cctype>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -15,6 +14,41 @@
 #include <type_traits>
 
 namespace headerlisp {
+
+//
+// Support stuff
+//
+
+struct context {
+    char *memory = nullptr;
+    size_t memory_used = 0;
+    size_t memory_reserved = 0;
+};
+inline void set_context(context ctx);
+
+class context_guard {
+public:
+    context_guard(const context_guard &) = delete;
+    context_guard(context_guard &&) = default;
+    context_guard &operator=(const context_guard &) = delete;
+    context_guard &operator=(context_guard &&) = default;
+
+    context_guard() : context_guard(1 << 20) {}
+    explicit context_guard(size_t size) : memory_((uint8_t *)malloc(size)), memory_size_(size) {
+        if (memory_ == nullptr)
+            throw std::bad_alloc{};
+        set_context(context{(char *)memory_, 0, memory_size_});
+    }
+    ~context_guard() { set_context(context{}); }
+
+private:
+    uint8_t *memory_ = nullptr;
+    size_t memory_size_ = 0;
+};
+
+//
+// Base types
+//
 
 class value;
 class value_range;
@@ -88,41 +122,6 @@ template <typename T>
 struct list_tag<T> {
     constexpr static inline std::string_view tag = "string";
 };
-template <> struct list_tag<double> {
-    constexpr static inline std::string_view tag = "num";
-};
-template <> struct list_tag<int> {
-    constexpr static inline std::string_view tag = "num";
-};
-template <> struct list_tag<int64_t> {
-    constexpr static inline std::string_view tag = "num";
-};
-
-value new_string(const char *str, size_t length);
-value new_stringz(const char *str);
-value cons(value car, value cdr);
-
-struct obj {
-    value_kind kind;
-    char _align[7];
-    char as[1];
-};
-
-struct obj_cons {
-    value car;
-    value cdr;
-};
-
-struct obj_env {
-    value vars;
-    value up;
-};
-
-struct obj_str {
-    size_t length;
-    uint32_t hash;
-    char str[1];
-};
 
 //
 // Value constructors
@@ -157,8 +156,8 @@ constexpr bool is_list(value x);
 // Unsafe functions that unwrap inner storage with assumption that type is correct
 //
 inline std::string_view unwrap_string_view(value value);
-inline value &unwrap_cdr(value value);
 inline value &unwrap_car(value value);
+inline value &unwrap_cdr(value value);
 inline double unwrap_f64(value value);
 // Unsafe cons mutators
 inline void unwrap_setcar(value cons, value car);
@@ -182,6 +181,8 @@ inline cons_unapply_result unapply_cons(value x);
 //
 // Library list accessors
 //
+inline size_t length(value lst);
+
 inline value caar(value x);
 inline value cadr(value x);
 inline value cdar(value x);
@@ -237,8 +238,6 @@ struct list_bind_4 {
 inline list_bind_2 first_2(value x);
 inline list_bind_3 first_3(value x);
 inline list_bind_4 first_4(value x);
-
-inline size_t length(value lst);
 
 //
 // Library list manipulation
@@ -304,60 +303,48 @@ inline value operator*(value left, double right);
 inline value operator/(value left, value right);
 inline value operator/(value left, double right);
 
+//
+// IO
+//
+
+inline value read(const char *s, size_t length);
+inline value read(std::string_view s);
+inline std::string print(value x);
+
+namespace internal {
+
+inline thread_local context g_ctx{nullptr, 0, 0};
+
 constexpr uint64_t HL_SIGN_BIT = ((uint64_t)1 << 63);
 constexpr uint64_t HL_QNAN = (uint64_t)0x7ffc000000000000;
 
-constexpr value nan_box_singleton(value_kind kind) {
-    return value::make(HL_QNAN | (uint64_t)kind);
-}
+constexpr value nan_box_singleton(value_kind kind) { return value::make(HL_QNAN | (uint64_t)kind); }
+constexpr uint8_t nan_unbox_singleton(value v) { return v.internal() & ~(HL_QNAN); }
+inline value nan_box_ptr(void *ptr) { return value::make(((uintptr_t)ptr) | (HL_SIGN_BIT | HL_QNAN)); }
 
-constexpr uint8_t nan_unbox_singleton(value v) {
-    return v.internal() & ~(HL_QNAN);
-}
+struct obj {
+    value_kind kind;
+    char _align[7];
+    char as[1];
+};
 
-inline value nan_box_ptr(void *ptr) {
-    return value::make(((uintptr_t)ptr) | (HL_SIGN_BIT | HL_QNAN));
-}
+struct obj_cons {
+    value car;
+    value cdr;
+};
 
-inline obj *nan_unbox_ptr(value value) {
-    return (obj *)(uintptr_t)(value.internal() & ~(HL_SIGN_BIT | HL_QNAN));
-}
+struct obj_env {
+    value vars;
+    value up;
+};
 
-constexpr value nil = nan_box_singleton(value_kind::nil);
-constexpr value tru = nan_box_singleton(value_kind::tru);
+struct obj_str {
+    size_t length;
+    uint32_t hash;
+    char str[1];
+};
 
-constexpr value::value() {
-    this->u64_ = nil.u64_;
-}
-
-constexpr bool is_num(value x) {
-    return (x.internal() & HL_QNAN) != HL_QNAN;
-}
-constexpr bool is_obj(value x) {
-    return ((x.internal() & (HL_QNAN | HL_SIGN_BIT)) == (HL_QNAN | HL_SIGN_BIT));
-}
-constexpr value_kind get_value_kind(value x) {
-    return is_obj(x) ? nan_unbox_ptr(x)->kind : (value_kind)nan_unbox_singleton(x);
-}
-
-constexpr bool is_nil(value x) {
-    return x.internal() == nil.internal();
-}
-constexpr bool is_true(value x) {
-    return x.internal() == tru.internal();
-}
-
-constexpr bool is_cons(value x) {
-    return is_obj(x) && nan_unbox_ptr(x)->kind == value_kind::cons;
-}
-
-constexpr bool is_string(value x) {
-    return is_obj(x) && nan_unbox_ptr(x)->kind == value_kind::string;
-}
-
-constexpr bool is_list(value x) {
-    return is_cons(x) || is_nil(x);
-}
+inline obj *nan_unbox_ptr(value value) { return (obj *)(uintptr_t)(value.internal() & ~(HL_SIGN_BIT | HL_QNAN)); }
 
 inline struct obj_cons *unwrap_cons(value value) {
     assert(is_obj(value));
@@ -372,231 +359,121 @@ inline obj_str *unwrap_string(value value) {
     assert(obj->kind == value_kind::string);
     return (obj_str *)obj->as;
 }
-inline const char *unwrap_zstring(value value) {
-    return unwrap_string(value)->str;
+
+inline uint32_t djb2(const char *src, const char *dst) {
+    uint32_t hash = 5381;
+    do {
+        int c = *src++;
+        hash = ((hash << 5) + hash) + c;
+    } while (src != dst);
+    return hash;
 }
 
-inline std::string_view unwrap_string_view(value value) {
-    obj_str *str = unwrap_string(value);
-    return {str->str, str->length};
-}
+inline void *alloc(context *ctx, size_t size) {
+    size_t size_aligned = (size + 15) / 16 * 16;
+    assert(!(ctx->memory_used & 15));
+    if (ctx->memory_used + size_aligned > ctx->memory_reserved)
+        throw std::bad_alloc{};
 
-inline value &unwrap_cdr(value value) {
-    assert(is_obj(value));
-    obj *obj = nan_unbox_ptr(value);
-    assert(obj->kind == value_kind::cons);
-    return ((obj_cons *)obj->as)->cdr;
-}
-inline value &unwrap_car(value value) {
-    assert(is_obj(value));
-    obj *obj = nan_unbox_ptr(value);
-    assert(obj->kind == value_kind::cons);
-    return ((obj_cons *)obj->as)->car;
-}
-
-inline double unwrap_f64(value value) {
-    assert(is_num(value));
-    double result;
-    memcpy(&result, &value, sizeof(value));
+    void *result = ctx->memory + ctx->memory_used;
+    ctx->memory_used += size_aligned;
     return result;
 }
-inline void unwrap_setcar(value cons, value car) {
-    unwrap_cons(cons)->car = car;
-}
-inline void unwrap_setcdr(value cons, value cdr) {
-    unwrap_cons(cons)->cdr = cdr;
+
+inline value new_string(context *ctx, const char *value, size_t length) {
+    assert(value != NULL);
+    assert(length != 0);
+    assert(length < UINT32_MAX);
+
+    void *memory = alloc(ctx, offsetof(obj, as) + offsetof(obj_str, str) + length + 1);
+    obj *header = (obj *)memory;
+    header->kind = value_kind::string;
+
+    obj_str *str = (obj_str *)(void *)(header->as);
+    str->length = length;
+    str->hash = djb2(value, value + length);
+    memcpy(str->str, value, length);
+    str->str[length] = '\0';
+
+    return nan_box_ptr(header);
 }
 
-constexpr std::string_view value_kind_str(value_kind kind) {
-    switch (kind) {
-    case value_kind::num: return "num";
-    case value_kind::nil: return "nil";
-    case value_kind::tru: return "true";
-    case value_kind::cons: return "cons";
-    case value_kind::string: return "string";
-    }
-    __builtin_unreachable();
-}
-constexpr std::string_view value_kind_str(value value) {
-    return value_kind_str(get_value_kind(value));
+inline value new_cons(context *ctx, value car, value cdr) {
+    void *memory = alloc(ctx, offsetof(obj, as) + sizeof(obj_cons));
+    obj *header = (obj *)memory;
+    header->kind = value_kind::cons;
+    obj_cons *cons = (obj_cons *)(void *)(header->as);
+    cons->car = car;
+    cons->cdr = cdr;
+    return nan_box_ptr(header);
 }
 
-inline double as_num_f64(value x) {
-    if (!is_num(x))
-        throw hl_exception("called 'num_dbl() on non-number value {}", value_kind_str(x));
-    return unwrap_f64(x);
+} // namespace internal
+
+inline void set_context(context ctx) { internal::g_ctx = ctx; }
+
+//
+// Value constructors
+//
+
+constexpr value nil = internal::nan_box_singleton(value_kind::nil);
+constexpr value tru = internal::nan_box_singleton(value_kind::tru);
+
+// Use concepts with same_as<T> here instead of concrete type arguments to avoid implicit conversions.
+// They are very hard to work around.
+inline value make_value(value x) { return x; }
+inline value make_value(std::same_as<bool> auto x) { return x ? tru : nil; }
+inline value make_value(std::same_as<double> auto x) {
+    uint64_t u64;
+    memcpy(&u64, &x, sizeof(u64));
+    return value::make(u64);
 }
-inline int64_t as_num_i64(value x) {
-    return (int64_t)as_num_f64(x);
+inline value make_value(std::same_as<int> auto x) { return make_value((double)x); }
+inline value make_value(std::same_as<int64_t> auto x) { return make_value((double)x); }
+inline value make_value(std::same_as<size_t> auto x) { return make_value((double)x); }
+inline value make_value(std::same_as<nullptr_t> auto) { return nil; }
+template <typename T>
+    requires(std::constructible_from<std::string_view, T> && !std::is_same_v<T, nullptr_t>)
+inline value make_value(T s) {
+    std::string_view sv{s};
+    return new_string(sv.begin(), sv.length());
 }
-inline int as_num_int(value x) {
-    return (int)as_num_i64(x);
+template <has_to_list T> inline value make_value(T x) { return to_list<T>{}(x); }
+template <typename T> inline value make_value(T) {
+    static_assert(!sizeof(T),
+                  "'make_value' not implemented for this type. Please use existing overloads to avoid ambiguity.");
 }
 
-inline value &car(value x) {
-    if (!is_cons(x))
-        throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
-    return unwrap_car(x);
-}
-inline value &cdr(value x) {
-    if (!is_cons(x))
-        throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
-    return unwrap_cdr(x);
-}
-inline cons_unapply_result unapply_cons(value x) {
-    if (!is_cons(x))
-        throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
-    return {unwrap_car(x), unwrap_cdr(x)};
-}
-inline std::string_view as_string_view(value x) {
-    if (!is_string(x))
-        throw hl_exception("called 'as_string_view()' on non-string {}", value_kind_str(x));
-    return unwrap_string_view(x);
+template <typename... Args> inline value list(Args &&...args) {
+    value first = nil;
+    value last = nil;
+    (add_last(first, last, make_value(std::forward<Args>(args))), ...);
+    return first;
 }
 
-template <> struct from_list<double> {
-    double operator()(value x) { return as_num_f64(x); }
-};
-template <> struct from_list<int> {
-    int operator()(value x) { return as_num_int(x); }
-};
-template <> struct from_list<int64_t> {
-    int64_t operator()(value x) { return as_num_i64(x); }
-};
-template <> struct from_list<std::string_view> {
-    std::string_view operator()(value x) { return as_string_view(x); }
-};
-
-// clang-format off
-inline value caar(value x) { return car(car(x)); }
-inline value cadr(value x) { return car(cdr(x)); }
-inline value cdar(value x) { return cdr(car(x)); }
-inline value cddr(value x) { return cdr(cdr(x)); }
-inline value caaar(value x) { return car(car(car(x))); }
-inline value caadr(value x) { return car(car(cdr(x))); }
-inline value cadar(value x) { return car(cdr(car(x))); }
-inline value caddr(value x) { return car(cdr(cdr(x))); }
-inline value cdaar(value x) { return cdr(car(car(x))); }
-inline value cdadr(value x) { return cdr(car(cdr(x))); }
-inline value cddar(value x) { return cdr(cdr(car(x))); }
-inline value cdddr(value x) { return cdr(cdr(cdr(x))); }
-inline value caaaar(value x) { return car(car(car(car(x)))); }
-inline value caaadr(value x) { return car(car(car(cdr(x)))); }
-inline value caadar(value x) { return car(car(cdr(car(x)))); }
-inline value caaddr(value x) { return car(car(cdr(cdr(x)))); }
-inline value cadaar(value x) { return car(cdr(car(car(x)))); }
-inline value cadadr(value x) { return car(cdr(car(cdr(x)))); }
-inline value caddar(value x) { return car(cdr(cdr(car(x)))); }
-inline value cadddr(value x) { return car(cdr(cdr(cdr(x)))); }
-inline value cdaaar(value x) { return cdr(car(car(car(x)))); }
-inline value cdaadr(value x) { return cdr(car(car(cdr(x)))); }
-inline value cdadar(value x) { return cdr(car(cdr(car(x)))); }
-inline value cdaddr(value x) { return cdr(car(cdr(cdr(x)))); }
-inline value cddaar(value x) { return cdr(cdr(car(car(x)))); }
-inline value cddadr(value x) { return cdr(cdr(car(cdr(x)))); }
-inline value cdddar(value x) { return cdr(cdr(cdr(car(x)))); }
-inline value cddddr(value x) { return cdr(cdr(cdr(cdr(x)))); }
-
-inline value head(value x) { return car(x); }
-inline value rest(value x) { return cdr(x); }
-inline value first(value x) { return car(x); }
-inline value second(value x) { return cadr(x); }
-inline value third(value x) { return caddr(x); }
-inline value fourth(value x) { return cadddr(x); }
-inline value fifth(value x) { return car(cddddr(x)); }
-inline value sixth(value x) { return cadr(cddddr(x)); }
-inline value seventh(value x) { return caddr(cddddr(x)); }
-inline value eighth(value x) { return cadddr(cddddr(x)); }
-inline value ninth(value x) { return car(cdddr(cddddr(x))); }
-inline value tenth(value x) { return cadr(cdddr(cddddr(x))); }
-
-inline list_bind_2 first_2(value x) {
-    return {first(x), second(x)};
-}
-inline list_bind_3 first_3(value x) {
-    return {first(x), second(x), third(x)};
-}
-inline list_bind_4 first_4(value x) {
-    return {first(x), second(x), third(x), fourth(x)};
+template <has_list_tag T> inline value make_tagged_value(T &&t) {
+    std::string_view tag = list_tag<std::remove_cvref_t<T>>::tag;
+    value v = make_value(std::forward<T>(t));
+    return cons(make_value(tag), v);
 }
 
-// clang-format on
-
-inline bool operator==(value left, value right) {
-    if (is_num(left) || is_num(right)) {
-        if (!is_num(left))
-            throw hl_exception("'==' called on non-number {}", value_kind_str(left));
-        if (!is_num(right))
-            throw hl_exception("'==' called on non-number {}", value_kind_str(right));
-        return unwrap_f64(left) == unwrap_f64(right);
-    }
-    if (is_string(left) || is_string(right)) {
-        if (!is_string(left))
-            throw hl_exception("'==' called on non-string {}", value_kind_str(left));
-        if (!is_string(right))
-            throw hl_exception("'==' called on non-string {}", value_kind_str(right));
-        return unwrap_string_view(left) == unwrap_string_view(right);
-    }
-    throw hl_exception("unexpected types for '==' {} {}", value_kind_str(left), value_kind_str(right));
-}
-inline bool operator==(value left, double right) {
-    if (!is_num(left))
-        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
-    return unwrap_f64(left) == right;
-}
-inline bool operator==(value left, std::string_view right) {
-    if (!is_string(left))
-        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
-    return unwrap_string_view(left) == right;
+template <has_list_tag... Args> inline value tagged_list(Args &&...args) {
+    value first = nil;
+    value last = nil;
+    (add_last(first, last, make_tagged_value(std::forward<Args>(args))), ...);
+    return first;
 }
 
-inline bool operator!=(value left, value right) {
-    if (is_num(left) || is_num(right)) {
-        if (!is_num(left))
-            throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
-        if (!is_num(right))
-            throw hl_exception("'!=' called on non-number {}", value_kind_str(right));
-        return unwrap_f64(left) != unwrap_f64(right);
-    }
-    if (is_string(left) || is_string(right)) {
-        if (!is_string(left))
-            throw hl_exception("'!=' called on non-string {}", value_kind_str(left));
-        if (!is_string(right))
-            throw hl_exception("'!=' called on non-string {}", value_kind_str(right));
-        return unwrap_string_view(left) != unwrap_string_view(right);
-    }
-    throw hl_exception("unexpected types for '!=' {} {}", value_kind_str(left), value_kind_str(right));
-}
-inline bool operator!=(value left, double x) {
-    if (!is_num(left))
-        throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
-    return unwrap_f64(left) != x;
-}
-inline bool operator!=(value left, std::string_view right) {
-    if (!is_num(left))
-        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
-    return unwrap_string_view(left) != right;
+constexpr value::value() { this->u64_ = nil.u64_; }
+
+inline value cons(value car, value cdr) { return internal::new_cons(&internal::g_ctx, car, cdr); }
+inline value new_string(const char *value, size_t length) {
+    return internal::new_string(&internal::g_ctx, value, length);
 }
 
-inline bool is_equal(value left, value right) {
-    value_kind kind = get_value_kind(left);
-    if (get_value_kind(right) != kind)
-        return false;
-    switch (kind) {
-    case value_kind::num: return left == right;
-    case value_kind::nil: return is_nil(left);
-    case value_kind::tru: return is_true(left);
-    case value_kind::cons:
-        return is_equal(unwrap_car(left), unwrap_car(right)) && is_equal(unwrap_cdr(left), unwrap_cdr(right));
-    case value_kind::string: {
-        obj_str *left_str = unwrap_string(left);
-        obj_str *right_str = unwrap_string(right);
-        return left_str->length == right_str->length && left_str->hash == right_str->hash &&
-               memcmp(left_str->str, right_str->str, left_str->length) == 0;
-    }
-    }
-    __builtin_unreachable();
-}
+//
+// Iterators
+//
 
 class value_iter {
 public:
@@ -798,16 +675,101 @@ private:
     value start_;
 };
 
-inline value_range value::iter() {
-    return value_range(*this);
+inline value_range value::iter() { return value_range(*this); }
+
+//
+// Type checkers
+//
+
+constexpr std::string_view value_kind_str(value_kind kind) {
+    switch (kind) {
+    case value_kind::num: return "num";
+    case value_kind::nil: return "nil";
+    case value_kind::tru: return "true";
+    case value_kind::cons: return "cons";
+    case value_kind::string: return "string";
+    }
+    __builtin_unreachable();
+}
+constexpr std::string_view value_kind_str(value value) { return value_kind_str(get_value_kind(value)); }
+
+constexpr value_kind get_value_kind(value x) {
+    return is_obj(x) ? internal::nan_unbox_ptr(x)->kind : (value_kind)internal::nan_unbox_singleton(x);
 }
 
-inline value nth(value lst, size_t idx) {
-    while (idx--) {
-        lst = cdr(lst);
-    }
-    return car(lst);
+constexpr bool is_num(value x) { return (x.internal() & internal::HL_QNAN) != internal::HL_QNAN; }
+constexpr bool is_obj(value x) {
+    return ((x.internal() & (internal::HL_QNAN | internal::HL_SIGN_BIT)) ==
+            (internal::HL_QNAN | internal::HL_SIGN_BIT));
 }
+
+constexpr bool is_nil(value x) { return x.internal() == nil.internal(); }
+constexpr bool is_true(value x) { return x.internal() == tru.internal(); }
+constexpr bool is_cons(value x) { return is_obj(x) && internal::nan_unbox_ptr(x)->kind == value_kind::cons; }
+constexpr bool is_string(value x) { return is_obj(x) && internal::nan_unbox_ptr(x)->kind == value_kind::string; }
+constexpr bool is_list(value x) { return is_cons(x) || is_nil(x); }
+
+//
+// Unsafe accessors
+//
+
+inline std::string_view unwrap_string_view(value value) {
+    internal::obj_str *str = internal::unwrap_string(value);
+    return {str->str, str->length};
+}
+
+inline value &unwrap_car(value value) {
+    internal::obj_cons *obj = internal::unwrap_cons(value);
+    return obj->car;
+}
+inline value &unwrap_cdr(value value) {
+    internal::obj_cons *obj = internal::unwrap_cons(value);
+    return obj->cdr;
+}
+inline double unwrap_f64(value value) {
+    assert(is_num(value));
+    double result;
+    memcpy(&result, &value, sizeof(value));
+    return result;
+}
+inline void unwrap_setcar(value cons, value car) { internal::unwrap_cons(cons)->car = car; }
+inline void unwrap_setcdr(value cons, value cdr) { internal::unwrap_cons(cons)->cdr = cdr; }
+
+//
+// Checked data access
+//
+
+inline std::string_view as_string_view(value x) {
+    if (!is_string(x))
+        throw hl_exception("called 'as_string_view()' on non-string {}", value_kind_str(x));
+    return unwrap_string_view(x);
+}
+inline double as_num_f64(value x) {
+    if (!is_num(x))
+        throw hl_exception("called 'num_dbl() on non-number value {}", value_kind_str(x));
+    return unwrap_f64(x);
+}
+inline int64_t as_num_i64(value x) { return (int64_t)as_num_f64(x); }
+inline int as_num_int(value x) { return (int)as_num_i64(x); }
+inline value &car(value x) {
+    if (!is_cons(x))
+        throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
+    return unwrap_car(x);
+}
+inline value &cdr(value x) {
+    if (!is_cons(x))
+        throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
+    return unwrap_cdr(x);
+}
+inline cons_unapply_result unapply_cons(value x) {
+    if (!is_cons(x))
+        throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
+    return {unwrap_car(x), unwrap_cdr(x)};
+}
+
+//
+// Library list accessors
+//
 
 inline size_t length(value lst) {
     size_t len = 0;
@@ -818,6 +780,56 @@ inline size_t length(value lst) {
     return len;
 }
 
+inline value caar(value x) { return car(car(x)); }
+inline value cadr(value x) { return car(cdr(x)); }
+inline value cdar(value x) { return cdr(car(x)); }
+inline value cddr(value x) { return cdr(cdr(x)); }
+inline value caaar(value x) { return car(car(car(x))); }
+inline value caadr(value x) { return car(car(cdr(x))); }
+inline value cadar(value x) { return car(cdr(car(x))); }
+inline value caddr(value x) { return car(cdr(cdr(x))); }
+inline value cdaar(value x) { return cdr(car(car(x))); }
+inline value cdadr(value x) { return cdr(car(cdr(x))); }
+inline value cddar(value x) { return cdr(cdr(car(x))); }
+inline value cdddr(value x) { return cdr(cdr(cdr(x))); }
+inline value caaaar(value x) { return car(car(car(car(x)))); }
+inline value caaadr(value x) { return car(car(car(cdr(x)))); }
+inline value caadar(value x) { return car(car(cdr(car(x)))); }
+inline value caaddr(value x) { return car(car(cdr(cdr(x)))); }
+inline value cadaar(value x) { return car(cdr(car(car(x)))); }
+inline value cadadr(value x) { return car(cdr(car(cdr(x)))); }
+inline value caddar(value x) { return car(cdr(cdr(car(x)))); }
+inline value cadddr(value x) { return car(cdr(cdr(cdr(x)))); }
+inline value cdaaar(value x) { return cdr(car(car(car(x)))); }
+inline value cdaadr(value x) { return cdr(car(car(cdr(x)))); }
+inline value cdadar(value x) { return cdr(car(cdr(car(x)))); }
+inline value cdaddr(value x) { return cdr(car(cdr(cdr(x)))); }
+inline value cddaar(value x) { return cdr(cdr(car(car(x)))); }
+inline value cddadr(value x) { return cdr(cdr(car(cdr(x)))); }
+inline value cdddar(value x) { return cdr(cdr(cdr(car(x)))); }
+inline value cddddr(value x) { return cdr(cdr(cdr(cdr(x)))); }
+
+inline value head(value x) { return car(x); }
+inline value rest(value x) { return cdr(x); }
+inline value first(value x) { return car(x); }
+inline value second(value x) { return cadr(x); }
+inline value third(value x) { return caddr(x); }
+inline value fourth(value x) { return cadddr(x); }
+inline value fifth(value x) { return car(cddddr(x)); }
+inline value sixth(value x) { return cadr(cddddr(x)); }
+inline value seventh(value x) { return caddr(cddddr(x)); }
+inline value eighth(value x) { return cadddr(cddddr(x)); }
+inline value ninth(value x) { return car(cdddr(cddddr(x))); }
+inline value tenth(value x) { return cadr(cdddr(cddddr(x))); }
+
+inline list_bind_2 first_2(value x) { return {first(x), second(x)}; }
+inline list_bind_3 first_3(value x) { return {first(x), second(x), third(x)}; }
+inline list_bind_4 first_4(value x) { return {first(x), second(x), third(x), fourth(x)}; }
+
+//
+// Library list manipulation
+//
+
 inline void add_last(value &first, value &last, value x) {
     if (is_nil(last)) {
         first = last = cons(x, nil);
@@ -827,64 +839,12 @@ inline void add_last(value &first, value &last, value x) {
         last = new_last;
     }
 }
-
-// Use concepts with same_as<T> here instead of concrete type arguments to avoid implicit conversions.
-// They are very hard to work around.
-inline value make_value(value x) {
-    return x;
-}
-inline value make_value(std::same_as<bool> auto x) {
-    return x ? tru : nil;
-}
-inline value make_value(std::same_as<double> auto x) {
-    uint64_t u64;
-    memcpy(&u64, &x, sizeof(u64));
-    return value::make(u64);
-}
-inline value make_value(std::same_as<int> auto x) {
-    return make_value((double)x);
-}
-inline value make_value(std::same_as<int64_t> auto x) {
-    return make_value((double)x);
-}
-inline value make_value(std::same_as<size_t> auto x) {
-    return make_value((double)x);
-}
-inline value make_value(std::same_as<nullptr_t> auto) {
-    return nil;
-}
-template <typename T>
-    requires(std::constructible_from<std::string_view, T> && !std::is_same_v<T, nullptr_t>)
-inline value make_value(T s) {
-    std::string_view sv{s};
-    return new_string(sv.begin(), sv.length());
-}
-template <has_to_list T> inline value make_value(T x) {
-    return to_list<T>{}(x);
-}
-template <typename T> inline value make_value(T) {
-    static_assert(!sizeof(T),
-                  "'make_value' not implemented for this type. Please use existing overloads to avoid ambiguity.");
-}
-
-template <typename... Args> inline value list(Args &&...args) {
-    value first = nil;
-    value last = nil;
-    (add_last(first, last, make_value(std::forward<Args>(args))), ...);
-    return first;
-}
-
-template <has_list_tag T> inline value make_tagged_value(T &&t) {
-    std::string_view tag = list_tag<std::remove_cvref_t<T>>::tag;
-    value v = make_value(std::forward<T>(t));
-    return cons(make_value(tag), v);
-}
-
-template <has_list_tag... Args> inline value tagged_list(Args &&...args) {
-    value first = nil;
-    value last = nil;
-    (add_last(first, last, make_tagged_value(std::forward<Args>(args))), ...);
-    return first;
+inline value reverse(value lst) {
+    value result = nil;
+    for (auto it : lst.iter()) {
+        result = cons(it, result);
+    }
+    return result;
 }
 
 inline value append(value a, value b) {
@@ -912,7 +872,6 @@ inline value append(value a, value b, value c) {
     }
     return result;
 }
-
 template <typename F> inline value map(F f, value lst) {
     auto new_lst = nil;
     auto new_lst_end = nil;
@@ -976,13 +935,6 @@ template <typename F> inline value foldr(F f, value init, value lst1, value lst2
     }
     return f(car(lst1), car(lst2), foldr(f, init, cdr(lst1), cdr(lst2)));
 }
-inline value reverse(value lst) {
-    value result = nil;
-    for (auto it : lst.iter()) {
-        result = cons(it, result);
-    }
-    return result;
-}
 
 template <typename F> inline value filter(F f, value lst) {
     value new_lst = nil;
@@ -1009,9 +961,7 @@ template <typename F> inline value remove(value x, value lst, F f) {
     }
     return new_lst;
 }
-inline value remove(value x, value lst) {
-    return remove(x, lst, is_equal);
-}
+inline value remove(value x, value lst) { return remove(x, lst, is_equal); }
 
 inline value cartesian_product(value lst1, value lst2) {
     value head = nil, tail = nil;
@@ -1033,6 +983,61 @@ inline value cartesian_product(value lst1, value lst2, value lst3) {
     }
     return head;
 }
+
+inline value assoc(value v, value lst) {
+    for (auto it : lst.iter()) {
+        if (is_equal(v, car(it))) {
+            return it;
+        }
+    }
+    return nil;
+}
+
+inline value nth(value lst, size_t idx) {
+    while (idx--) {
+        lst = cdr(lst);
+    }
+    return car(lst);
+}
+template <typename F> inline std::optional<size_t> index_of(value lst, value v, F f) {
+    size_t idx = 0;
+    for (auto it : lst.iter()) {
+        if (f(v, it)) {
+            return idx;
+        }
+        ++idx;
+    }
+    return std::nullopt;
+}
+inline std::optional<size_t> index_of(value lst, value v) { return index_of(lst, v, is_equal); }
+template <typename F> inline bool member(value v, value lst, F f) { return index_of(lst, v, f).has_value(); }
+inline bool member(value v, value lst) { return index_of(lst, v).has_value(); }
+
+inline value range(size_t end) {
+    value head = nil, tail = nil;
+    for (size_t i = 0; i < end; ++i) {
+        add_last(head, tail, make_value(i));
+    }
+    return head;
+}
+inline value range(double start, double end, double step) {
+    value head = nil, tail = nil;
+    for (double it = start; it < end; it += step) {
+        add_last(head, tail, make_value(it));
+    }
+    return head;
+}
+template <typename F> inline value build_list(size_t n, F f) {
+    value head = nil, tail = nil;
+    for (size_t i = 0; i < n; ++i) {
+        add_last(head, tail, make_value(f(i)));
+    }
+    return head;
+}
+
+//
+// Predicates
+//
 
 inline bool is_even(value x) {
     if (!is_num(x))
@@ -1058,6 +1063,86 @@ inline bool is_negative(value x) {
     if (!is_num(x))
         throw hl_exception("'is_odd' called on non-number {}", value_kind_str(x));
     return unwrap_f64(x) < 0;
+}
+
+//
+// Equality and operator overloading
+//
+
+inline bool is_equal(value left, value right) {
+    value_kind kind = get_value_kind(left);
+    if (get_value_kind(right) != kind)
+        return false;
+    switch (kind) {
+    case value_kind::num: return left == right;
+    case value_kind::nil: return is_nil(left);
+    case value_kind::tru: return is_true(left);
+    case value_kind::cons:
+        return is_equal(unwrap_car(left), unwrap_car(right)) && is_equal(unwrap_cdr(left), unwrap_cdr(right));
+    case value_kind::string: {
+        internal::obj_str *left_str = internal::unwrap_string(left);
+        internal::obj_str *right_str = internal::unwrap_string(right);
+        return left_str->length == right_str->length && left_str->hash == right_str->hash &&
+               memcmp(left_str->str, right_str->str, left_str->length) == 0;
+    }
+    }
+    __builtin_unreachable();
+}
+
+inline bool operator==(value left, value right) {
+    if (is_num(left) || is_num(right)) {
+        if (!is_num(left))
+            throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+        if (!is_num(right))
+            throw hl_exception("'==' called on non-number {}", value_kind_str(right));
+        return unwrap_f64(left) == unwrap_f64(right);
+    }
+    if (is_string(left) || is_string(right)) {
+        if (!is_string(left))
+            throw hl_exception("'==' called on non-string {}", value_kind_str(left));
+        if (!is_string(right))
+            throw hl_exception("'==' called on non-string {}", value_kind_str(right));
+        return unwrap_string_view(left) == unwrap_string_view(right);
+    }
+    throw hl_exception("unexpected types for '==' {} {}", value_kind_str(left), value_kind_str(right));
+}
+inline bool operator==(value left, double right) {
+    if (!is_num(left))
+        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+    return unwrap_f64(left) == right;
+}
+inline bool operator==(value left, std::string_view right) {
+    if (!is_string(left))
+        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+    return unwrap_string_view(left) == right;
+}
+
+inline bool operator!=(value left, value right) {
+    if (is_num(left) || is_num(right)) {
+        if (!is_num(left))
+            throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
+        if (!is_num(right))
+            throw hl_exception("'!=' called on non-number {}", value_kind_str(right));
+        return unwrap_f64(left) != unwrap_f64(right);
+    }
+    if (is_string(left) || is_string(right)) {
+        if (!is_string(left))
+            throw hl_exception("'!=' called on non-string {}", value_kind_str(left));
+        if (!is_string(right))
+            throw hl_exception("'!=' called on non-string {}", value_kind_str(right));
+        return unwrap_string_view(left) != unwrap_string_view(right);
+    }
+    throw hl_exception("unexpected types for '!=' {} {}", value_kind_str(left), value_kind_str(right));
+}
+inline bool operator!=(value left, double x) {
+    if (!is_num(left))
+        throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
+    return unwrap_f64(left) != x;
+}
+inline bool operator!=(value left, std::string_view right) {
+    if (!is_num(left))
+        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+    return unwrap_string_view(left) != right;
 }
 
 inline value operator+(value left, value right) {
@@ -1094,114 +1179,11 @@ inline value operator/(value left, value right) {
     return make_value(unwrap_f64(left) / unwrap_f64(right));
 }
 
-inline value assoc(value v, value lst) {
-    for (auto it : lst.iter()) {
-        if (is_equal(v, car(it))) {
-            return it;
-        }
-    }
-    return nil;
-}
+//
+// IO
+//
 
-template <typename F> inline std::optional<size_t> index_of(value lst, value v, F f) {
-    size_t idx = 0;
-    for (auto it : lst.iter()) {
-        if (f(v, it)) {
-            return idx;
-        }
-        ++idx;
-    }
-    return std::nullopt;
-}
-inline std::optional<size_t> index_of(value lst, value v) {
-    return index_of(lst, v, is_equal);
-}
-template <typename F> inline bool member(value v, value lst, F f) {
-    return index_of(lst, v, f).has_value();
-}
-inline bool member(value v, value lst) {
-    return index_of(lst, v).has_value();
-}
-
-inline value range(size_t end) {
-    value head = nil, tail = nil;
-    for (size_t i = 0; i < end; ++i) {
-        add_last(head, tail, make_value(i));
-    }
-    return head;
-}
-inline value range(double start, double end, double step) {
-    value head = nil, tail = nil;
-    for (double it = start; it < end; it += step) {
-        add_last(head, tail, make_value(it));
-    }
-    return head;
-}
-template <typename F> inline value build_list(size_t n, F f) {
-    value head = nil, tail = nil;
-    for (size_t i = 0; i < n; ++i) {
-        add_last(head, tail, make_value(f(i)));
-    }
-    return head;
-}
-
-struct context {
-    char *memory = nullptr;
-    size_t memory_used = 0;
-    size_t memory_reserved = 0;
-};
-
-namespace internal {
-
-inline thread_local context g_ctx{nullptr, 0, 0};
-
-inline uint32_t djb2(const char *src, const char *dst) {
-    uint32_t hash = 5381;
-    do {
-        int c = *src++;
-        hash = ((hash << 5) + hash) + c;
-    } while (src != dst);
-    return hash;
-}
-
-inline void *alloc(context *ctx, size_t size) {
-    size_t size_aligned = (size + 15) / 16 * 16;
-    assert(!(ctx->memory_used & 15));
-    if (ctx->memory_used + size_aligned > ctx->memory_reserved)
-        throw std::bad_alloc{};
-
-    void *result = ctx->memory + ctx->memory_used;
-    ctx->memory_used += size_aligned;
-    return result;
-}
-
-inline value new_string(context *ctx, const char *value, size_t length) {
-    assert(value != NULL);
-    assert(length != 0);
-    assert(length < UINT32_MAX);
-
-    void *memory = alloc(ctx, offsetof(obj, as) + offsetof(obj_str, str) + length + 1);
-    obj *header = (obj *)memory;
-    header->kind = value_kind::string;
-
-    obj_str *str = (obj_str *)(void *)(header->as);
-    str->length = length;
-    str->hash = djb2(value, value + length);
-    memcpy(str->str, value, length);
-    str->str[length] = '\0';
-
-    return nan_box_ptr(header);
-}
-
-inline value new_cons(context *ctx, value car, value cdr) {
-    void *memory = alloc(ctx, offsetof(obj, as) + sizeof(obj_cons));
-    obj *header = (obj *)memory;
-    header->kind = value_kind::cons;
-    obj_cons *cons = (obj_cons *)(void *)(header->as);
-    cons->car = car;
-    cons->cdr = cdr;
-    return nan_box_ptr(header);
-}
+namespace internal::reader {
 
 enum class token_kind {
     end,
@@ -1423,48 +1405,15 @@ struct reader {
     }
 };
 
-} // namespace internal
-
-inline void set_context(context ctx) {
-    internal::g_ctx = ctx;
-}
-
-class context_guard {
-public:
-    context_guard(const context_guard &) = delete;
-    context_guard(context_guard &&) = default;
-    context_guard &operator=(const context_guard &) = delete;
-    context_guard &operator=(context_guard &&) = default;
-
-    context_guard() : context_guard(1 << 20) {}
-    explicit context_guard(size_t size) : memory_((uint8_t *)malloc(size)), memory_size_(size) {
-        if (memory_ == nullptr)
-            throw std::bad_alloc{};
-        set_context(context{(char *)memory_, 0, memory_size_});
-    }
-    ~context_guard() { set_context(context{}); }
-
-private:
-    uint8_t *memory_ = nullptr;
-    size_t memory_size_ = 0;
-};
-
-inline value cons(value car, value cdr) {
-    return internal::new_cons(&internal::g_ctx, car, cdr);
-}
-inline value new_string(const char *value, size_t length) {
-    return internal::new_string(&internal::g_ctx, value, length);
-}
+} // namespace internal::reader
 
 inline value read(const char *s, size_t length) {
-    internal::lexer lexer{s, s + length, s, {}};
-    internal::reader reader{lexer};
+    internal::reader::lexer lexer{s, s + length, s, {}};
+    internal::reader::reader reader{lexer};
 
     return reader.read_expr();
 }
-inline value read(std::string_view s) {
-    return read(s.data(), s.length());
-}
+inline value read(std::string_view s) { return read(s.data(), s.length()); }
 
 inline std::string print(value x) {
     switch (get_value_kind(x)) {
@@ -1492,6 +1441,33 @@ inline std::string print(value x) {
     case value_kind::string: return std::format("\"{}\"", unwrap_string_view(x));
     }
 }
+
+//
+// Trait definitions
+//
+
+template <> struct list_tag<double> {
+    constexpr static inline std::string_view tag = "num";
+};
+template <> struct list_tag<int> {
+    constexpr static inline std::string_view tag = "num";
+};
+template <> struct list_tag<int64_t> {
+    constexpr static inline std::string_view tag = "num";
+};
+
+template <> struct from_list<double> {
+    double operator()(value x) { return as_num_f64(x); }
+};
+template <> struct from_list<int> {
+    int operator()(value x) { return as_num_int(x); }
+};
+template <> struct from_list<int64_t> {
+    int64_t operator()(value x) { return as_num_i64(x); }
+};
+template <> struct from_list<std::string_view> {
+    std::string_view operator()(value x) { return as_string_view(x); }
+};
 
 } // namespace headerlisp
 
