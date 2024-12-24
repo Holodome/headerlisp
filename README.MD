@@ -12,7 +12,7 @@ std::string result = print(lst); // (2, 4, 6, ("hello, world"))
 
 ## Motivation
 
-There are two main use cases for headerlisp:
+There are three main use cases for headerlisp:
 
 1. *Parsers* - Instead of using [lex](https://en.wikipedia.org/wiki/Lex_(software)) to write custom parser, lisp s-expressions can be used to define syntax. Headerlisp allows parsing s-expressions and traversing them.
 2. *DSLs* - Custom parsers allow easy writing of DSLs for different tasks, where using anything more complex would be too time-consuming.
