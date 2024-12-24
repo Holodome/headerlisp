@@ -1,4 +1,4 @@
-.PHONY: all opt clean debug release bench  
+.PHONY: all opt clean debug release 
 
 all: debug
 opt: release
@@ -6,9 +6,6 @@ opt: release
 GENERATOR ?=
 FORCE_COLOR ?=
 ASAN_FLAG ?=
-
-MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
-PROJ_DIR := $(dir $(MKFILE_PATH))
 
 ifeq ($(GEN),ninja)
 	GENERATOR=-G "Ninja"
