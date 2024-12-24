@@ -135,10 +135,12 @@ int main() {
         std::string serialized = hl::print(msg_lst); // ("say-my-name" 1 "Walter")
         printf("sending %s\n", serialized.c_str());
         write(pipefd[1], serialized.data(), serialized.size());
+
         msg_lst = hl::make_tagged_value(SayMyName{2, "White"});
         serialized = hl::print(msg_lst); // ("say-my-name" 2 "White")
         printf("sending %s\n", serialized.c_str());
         write(pipefd[1], serialized.data(), serialized.size());
+
         msg_lst = hl::make_tagged_value(Calculate{"(abs (* 2 (+ 1 3)))"});
         serialized = hl::print(msg_lst); // ("calculate" "(abs (* 2 (+ 1 3)))")
         printf("sending %s\n", serialized.c_str());

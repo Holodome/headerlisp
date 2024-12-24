@@ -7,6 +7,7 @@
 
 namespace hl = headerlisp;
 
+// Define type hierarchy for expressions that will be used inside interpreter
 struct Node {
     virtual int eval() = 0;
 };
@@ -26,6 +27,7 @@ struct Minus : Node {
     int eval() override { return -arg->eval(); }
 };
 
+// Recursive s-expression traversal that builds tree of Nodes.
 Node *parse_tree(hl::value it) {
     if (hl::is_num(it))
         return new Num{hl::as_num_int(it)};
@@ -39,16 +41,19 @@ Node *parse_tree(hl::value it) {
     exit(1);
 }
 
+// Convert string to interpreter tree.
 Node *parse(std::string_view input) {
     hl::context_guard ctx{};
     hl::value ast;
     try {
+        // Parse the string into s-expression
         ast = hl::read(input);
     } catch (hl::hl_exception &e) {
         fprintf(stderr, "reading error: %s\n", e.what());
         exit(1);
     }
     try {
+        // Parse s-expression into interpreter tree.
         return parse_tree(ast);
     } catch (hl::hl_exception &e) {
         fprintf(stderr, "parsing error: %s\n", e.what());
