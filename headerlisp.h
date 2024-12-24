@@ -3,9 +3,11 @@
 
 #include <assert.h>
 #include <cctype>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <iostream>
 #include <iterator>
 #include <new>
 #include <stddef.h>
@@ -78,15 +80,30 @@ template <typename T> struct list_tag {};
 
 template <typename T>
 concept has_to_list = requires(T a) {
-    { to_list<T>{}(a) } -> std::same_as<value>;
+    { to_list<std::remove_cvref_t<T>>{}(a) } -> std::same_as<value>;
 };
 template <typename T>
 concept has_from_list = requires {
-    { from_list<T>{}(value{}) } -> std::same_as<T>;
+    { from_list<std::remove_cvref_t<T>>{}(value{}) } -> std::same_as<T>;
 };
 template <typename T>
 concept has_list_tag = requires {
-    { from_list<T>::tag } -> std::same_as<std::string_view>;
+    { list_tag<std::remove_cvref_t<T>>::tag } -> std::same_as<const std::string_view &>;
+};
+
+template <typename T>
+    requires(std::constructible_from<std::string_view, T> && !std::same_as<T, nullptr_t>)
+struct list_tag<T> {
+    constexpr static inline std::string_view tag = "string";
+};
+template <> struct list_tag<double> {
+    constexpr static inline std::string_view tag = "num";
+};
+template <> struct list_tag<int> {
+    constexpr static inline std::string_view tag = "num";
+};
+template <> struct list_tag<int64_t> {
+    constexpr static inline std::string_view tag = "num";
 };
 
 class hl_exception : public std::exception {
@@ -247,11 +264,32 @@ inline value &cdr(value x) {
         throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
     return unwrap_cdr(x);
 }
+struct cons_unapply_result {
+    value &car, &cdr;
+};
+inline cons_unapply_result unapply_cons(value x) {
+    if (!is_cons(x))
+        throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
+    return {unwrap_car(x), unwrap_cdr(x)};
+}
 inline std::string_view as_string_view(value x) {
     if (!is_string(x))
         throw hl_exception("called 'as_string_view()' on non-string {}", value_kind_str(x));
     return unwrap_string_view(x);
 }
+
+template <> struct from_list<double> {
+    double operator()(value x) { return as_num_f64(x); }
+};
+template <> struct from_list<int> {
+    int operator()(value x) { return as_num_int(x); }
+};
+template <> struct from_list<int64_t> {
+    int64_t operator()(value x) { return as_num_i64(x); }
+};
+template <> struct from_list<std::string_view> {
+    std::string_view operator()(value x) { return as_string_view(x); }
+};
 
 // clang-format off
 inline value caar(value x) { return car(car(x)); }
@@ -429,23 +467,91 @@ public:
     using reference = T &;
     using iterator_category = std::forward_iterator_tag;
 
-    deserializing_value_iter() = delete;
-    deserializing_value_iter(const deserializing_value_iter &) = default;
-    deserializing_value_iter(deserializing_value_iter &&) = default;
-    deserializing_value_iter &operator=(const deserializing_value_iter &) = default;
-    deserializing_value_iter &operator=(deserializing_value_iter &&) = default;
+    constexpr deserializing_value_iter() = delete;
+    constexpr deserializing_value_iter(const deserializing_value_iter &) = default;
+    constexpr deserializing_value_iter(deserializing_value_iter &&) = default;
+    constexpr deserializing_value_iter &operator=(const deserializing_value_iter &) = default;
+    constexpr deserializing_value_iter &operator=(deserializing_value_iter &&) = default;
 
-    explicit deserializing_value_iter(value x) : current_(x) { update_current_value(); }
+    explicit constexpr deserializing_value_iter(value x) : current_(x) { update_current_value(); }
 
-    reference operator*() { return current_value_; }
-    bool operator==(deserializing_value_iter other) { return current_.internal() == other.current_.internal(); }
+    constexpr reference operator*() { return current_value_; }
+    constexpr bool operator==(deserializing_value_iter other) {
+        return current_.internal() == other.current_.internal();
+    }
 
-    deserializing_value_iter operator++(int) {
+    constexpr deserializing_value_iter operator++(int) {
         deserializing_value_iter tmp = *this;
         ++tmp;
         return tmp;
     }
-    deserializing_value_iter &operator++() {
+    constexpr deserializing_value_iter &operator++() {
+        current_ = cdr(current_);
+        update_current_value();
+        return *this;
+    }
+
+private:
+    constexpr void update_current_value() {
+        if (!is_nil(current_))
+            current_value_ = from_list<T>{}(car(current_));
+    }
+
+    value current_;
+    T current_value_;
+};
+
+template <typename... Args> class deserializing_sum_value_iter {
+public:
+    class element_wrapper {
+    public:
+        constexpr element_wrapper() = default;
+        constexpr element_wrapper(const element_wrapper &) = default;
+        constexpr element_wrapper(element_wrapper &&) = default;
+        constexpr element_wrapper &operator=(const element_wrapper &) = default;
+        constexpr element_wrapper &operator=(element_wrapper &&) = default;
+
+        constexpr element_wrapper(std::string_view tag, value data) : tag_(tag), data_(data) {}
+
+        template <has_from_list T> T get() const {
+            assert(is_a<T>());
+            return from_list<T>{}(data_);
+        }
+
+        template <typename T> constexpr bool is_a() const { return tag_ == list_tag<T>::tag; }
+        constexpr bool is_num() const { return is_a<double>(); }
+        constexpr bool is_string() const { return is_a<std::string_view>(); }
+
+        constexpr std::string_view tag() const { return tag_; }
+
+    private:
+        std::string_view tag_;
+        value data_;
+    };
+
+    using difference_type = ptrdiff_t;
+    using value_type = element_wrapper;
+    using pointer = element_wrapper *;
+    using reference = element_wrapper &;
+    using iterator_category = std::forward_iterator_tag;
+
+    deserializing_sum_value_iter() = delete;
+    deserializing_sum_value_iter(const deserializing_sum_value_iter &) = default;
+    deserializing_sum_value_iter(deserializing_sum_value_iter &&) = default;
+    deserializing_sum_value_iter &operator=(const deserializing_sum_value_iter &) = default;
+    deserializing_sum_value_iter &operator=(deserializing_sum_value_iter &&) = default;
+
+    explicit deserializing_sum_value_iter(value x) : current_(x) { update_current_value(); }
+
+    reference operator*() { return current_element_; }
+    bool operator==(deserializing_sum_value_iter other) { return current_.internal() == other.current_.internal(); }
+
+    deserializing_sum_value_iter operator++(int) {
+        deserializing_value_iter tmp = *this;
+        ++tmp;
+        return tmp;
+    }
+    deserializing_sum_value_iter &operator++() {
         current_ = cdr(current_);
         update_current_value();
         return *this;
@@ -453,12 +559,15 @@ public:
 
 private:
     void update_current_value() {
-        if (!is_nil(current_))
-            current_value_ = from_list<T>{}(car(current_));
+        if (!is_nil(current_)) {
+            value item = car(current_);
+            auto [tag, data] = unapply_cons(item);
+            current_element_ = element_wrapper(as_string_view(tag), data);
+        }
     }
 
     value current_;
-    T current_value_;
+    element_wrapper current_element_;
 };
 
 template <has_from_list T> class deserializing_value_range {
@@ -478,9 +587,22 @@ private:
     value start_;
 };
 
-template <typename... Args>
-    requires((has_list_tag<Args> && has_from_list<Args>) && ...)
-class deserializing_sum_value_range {};
+template <has_list_tag... Args> class deserializing_sum_value_range {
+public:
+    deserializing_sum_value_range() = delete;
+    deserializing_sum_value_range(const deserializing_sum_value_range &) = default;
+    deserializing_sum_value_range(deserializing_sum_value_range &&) = default;
+    deserializing_sum_value_range &operator=(const deserializing_sum_value_range &) = default;
+    deserializing_sum_value_range &operator=(deserializing_sum_value_range &&) = default;
+
+    explicit deserializing_sum_value_range(value x) : start_(x) {}
+
+    deserializing_sum_value_iter<Args...> begin() { return deserializing_sum_value_iter<Args...>{start_}; }
+    deserializing_sum_value_iter<Args...> end() { return deserializing_sum_value_iter<Args...>{nil}; }
+
+private:
+    value start_;
+};
 
 class value_range {
 public:
@@ -495,7 +617,10 @@ public:
     value_iter begin() { return value_iter{start_}; }
     value_iter end() { return value_iter{nil}; }
 
-    template <typename T> deserializing_value_range<T> as() { return deserializing_value_range<T>(start_); }
+    template <has_from_list T> deserializing_value_range<T> as() { return deserializing_value_range<T>(start_); }
+    template <has_list_tag... Args> deserializing_sum_value_range<Args...> as_sum() {
+        return deserializing_sum_value_range<Args...>(start_);
+    }
 
 private:
     value start_;
@@ -574,6 +699,19 @@ template <typename... Args> inline value list(Args &&...args) {
     value first = nil;
     value last = nil;
     (add_last(first, last, make_value(std::forward<Args>(args))), ...);
+    return first;
+}
+
+template <has_list_tag T> inline value make_tagged_value(T &&t) {
+    std::string_view tag = list_tag<std::remove_cvref_t<T>>::tag;
+    value v = make_value(std::forward<T>(t));
+    return cons(make_value(tag), v);
+}
+
+template <has_list_tag... Args> inline value tagged_list(Args &&...args) {
+    value first = nil;
+    value last = nil;
+    (add_last(first, last, make_tagged_value(std::forward<Args>(args))), ...);
     return first;
 }
 
@@ -1080,6 +1218,7 @@ struct reader {
                 if (tok.kind != token_kind::rparen) {
                     throw hl_exception("Missing closing paren after dot when reading list");
                 }
+                eat_token();
                 return list_head;
             }
 

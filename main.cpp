@@ -26,6 +26,32 @@ template <> struct headerlisp::from_list<Person> {
     }
 };
 
+template <> struct headerlisp::list_tag<Person> {
+    constexpr static inline std::string_view tag = "person";
+};
+
+void tagged_test() {
+    Person p1{"John", "Here", 23};
+    Person p2{"Adam", "There", 32};
+    auto lst = tagged_list(1, "hello", p1, p2);
+    std::string serialized = print(lst);
+    std::cout << serialized << "\n";
+    auto deserialized = read(serialized); // ((num . 1) (string . "hello") (person "John" "Here" 23) (person "Adam" "There" 32))
+    std::cout << print(deserialized) << "\n";
+    for (auto it : deserialized.iter().as_sum<Person, int, std::string_view>()) {
+        if (it.is_a<Person>()) {
+            auto p = it.get<Person>();
+            std::cout << std::format("Person(name={},address={},age={})\n", p.name, p.address, p.age);
+        }
+        if (it.is_a<std::string_view>()) {
+            std::cout << std::format("string={}\n", it.get<std::string_view>());
+        }
+        if (it.is_a<int>()) {
+            std::cout << std::format("int={}\n", it.get<int>());
+        }
+    }
+}
+
 void other_test() {
     auto x = list(1, 2, list("hello", 3), nullptr, true, false);
     std::cout << print(x) << "\n";
@@ -38,7 +64,8 @@ void other_test() {
 int main() {
     set_context(context{(char *)malloc(1 << 20), 0, 1 << 20});
 
-    other_test();
+    // other_test();
+    tagged_test();
 
     Person p1{"John", "Here", 23};
     Person p2{"Adam", "There", 32};
@@ -48,5 +75,9 @@ int main() {
     auto deserialized = read(serialized);
     for (Person &p : deserialized.iter().as<Person>()) {
         std::cout << std::format("Person(name={},address={},age={})\n", p.name, p.address, p.age);
+    }
+    
+    for (int x : list(1, 2, 3).iter().as<int>()) {
+        std::cout << std::format("int={}\n", x);
     }
 }
