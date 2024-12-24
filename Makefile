@@ -25,22 +25,16 @@ debug:
 	mkdir -p ./build/debug && \
 	cd build/debug && \
 	cmake $(GENERATOR) $(FORCE_COLOR) $(ASAN_FLAG) -DCMAKE_EXPORT_COMPILE_COMMANDS=On -DCMAKE_BUILD_TYPE=Debug ../.. && \
-	cmake --build . --config Debug --target headerlisp -j$(nproc)
+	cmake --build . --config Debug --target all -j$(nproc)
 
 release: 
 	mkdir -p ./build/release && \
 	cd build/release && \
 	cmake $(GENERATOR) $(FORCE_COLOR) -DCMAKE_BUILD_TYPE=Release ../.. && \
-	cmake --build . --config Release --target headerlisp -j$(nproc)
+	cmake --build . --config Release --target all -j$(nproc)
 
 reldebug: 
 	mkdir -p ./build/reldebug && \
 	cd build/reldebug && \
 	cmake $(GENERATOR) $(FORCE_COLOR) -DCMAKE_BUILD_TYPE=RelWithDebInfo ../.. && \
-	cmake --build . --config RelWithDebInfo --target headerlisp -j$(nproc)
-
-bench:
-	mkdir -p ./build/release && \
-	cd build/release && \
-	cmake $(GENERATOR) $(FORCE_COLOR) -DCMAKE_BUILD_TYPE=Release ../.. && \
-	cmake --build . --config Release --target bench -j$(nproc)
+	cmake --build . --config RelWithDebInfo --target all -j$(nproc)

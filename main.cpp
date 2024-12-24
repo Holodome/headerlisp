@@ -36,17 +36,18 @@ void tagged_test() {
     auto lst = tagged_list(1, "hello", p1, p2);
     std::string serialized = print(lst);
     std::cout << serialized << "\n";
-    auto deserialized = read(serialized); // ((num . 1) (string . "hello") (person "John" "Here" 23) (person "Adam" "There" 32))
+    auto deserialized =
+        read(serialized); // ((num . 1) (string . "hello") (person "John" "Here" 23) (person "Adam" "There" 32))
     std::cout << print(deserialized) << "\n";
     for (auto it : deserialized.iter().any_of<Person, int, std::string_view>()) {
-        if (it.is_a<Person>()) {
+        if (it.is<Person>()) {
             auto p = it.get<Person>();
             std::cout << std::format("Person(name={},address={},age={})\n", p.name, p.address, p.age);
         }
-        if (it.is_a<std::string_view>()) {
+        if (it.is<std::string_view>()) {
             std::cout << std::format("string={}\n", it.get<std::string_view>());
         }
-        if (it.is_a<int>()) {
+        if (it.is<int>()) {
             std::cout << std::format("int={}\n", it.get<int>());
         }
     }
@@ -76,7 +77,7 @@ int main() {
     for (Person &p : deserialized.iter().as<Person>()) {
         std::cout << std::format("Person(name={},address={},age={})\n", p.name, p.address, p.age);
     }
-    
+
     for (int x : list(1, 2, 3).iter().as<int>()) {
         std::cout << std::format("int={}\n", x);
     }
