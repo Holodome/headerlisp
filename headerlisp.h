@@ -28,8 +28,10 @@
 
 #include <assert.h>
 #include <cctype>
+#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <format>
 #include <iterator>
 #include <new>
@@ -404,6 +406,22 @@ inline void *alloc(context *ctx, size_t size) {
     return result;
 }
 
+inline bool hex_symbol_to_int(int x, int *value) {
+    if ('0' <= x && x <= '9') {
+        *value = x - '0';
+        return true;
+    }
+    if ('A' <= x && x <= 'F') {
+        *value = x - 'A' + 0xA;
+        return true;
+    }
+    if ('a' <= x && x <= 'f') {
+        *value = x - 'a' + 0xA;
+        return true;
+    }
+    return false;
+}
+
 inline value new_string(context *ctx, const char *value, size_t length) {
     assert(value != NULL);
     assert(length != 0);
@@ -414,10 +432,49 @@ inline value new_string(context *ctx, const char *value, size_t length) {
     header->kind = value_kind::string;
 
     obj_str *str = (obj_str *)(void *)(header->as);
-    str->length = length;
-    str->hash = djb2(value, value + length);
-    memcpy(str->str, value, length);
-    str->str[length] = '\0';
+    size_t actual_length = 0;
+    char *write_cursor = str->str;
+    const char *end = value + length;
+    for (const char *cursor = value; cursor < end;) {
+        if (*cursor == '\\') {
+            ++cursor;
+            if (cursor >= end)
+                throw hl_exception("invalid escape sequence");
+            switch (*cursor++) {
+            case 'a': *write_cursor++ = '\a'; break;
+            case 'b': *write_cursor++ = '\b'; break;
+            case 'e': *write_cursor++ = '\x1b'; break;
+            case 'f': *write_cursor++ = '\f'; break;
+            case 'n': *write_cursor++ = '\n'; break;
+            case 'r': *write_cursor++ = '\r'; break;
+            case 't': *write_cursor++ = '\t'; break;
+            case 'v': *write_cursor++ = '\v'; break;
+            case '\\': *write_cursor++ = '\\'; break;
+            case '\'': *write_cursor++ = '\''; break;
+            case '\"': *write_cursor++ = '\"'; break;
+            case '\?': *write_cursor++ = '\x3f'; break;
+            case 'x': {
+                if (cursor + 1 >= end)
+                    throw hl_exception("too short hex escape sequence");
+                int a = *cursor++;
+                int b = *cursor++;
+                if (!hex_symbol_to_int(a, &a) || !hex_symbol_to_int(b, &b))
+                    throw hl_exception("invalid hex escape sequence");
+                *write_cursor++ = (a << 4) | b;
+                break;
+            }
+            default: throw hl_exception("invalid escape secuence");
+            }
+            ++actual_length;
+            continue;
+        }
+        *write_cursor++ = *cursor++;
+        ++actual_length;
+    }
+    assert((size_t)(write_cursor - str->str) <= length + 1);
+    *write_cursor = '\0';
+    str->length = actual_length;
+    str->hash = djb2(str->str, str->str + actual_length);
 
     return nan_box_ptr(header);
 }
@@ -1279,6 +1336,11 @@ struct lexer {
                         if (cursor >= end) {
                             throw hl_exception("unterminated string literal");
                         }
+                        if (*cursor == '\\' && cursor + 1 < end && cursor[1] == '\"') {
+                            ++cursor;
+                            ++cursor;
+                            continue;
+                        }
                         if (*cursor == '"') {
                             ++cursor;
                             break;
@@ -1333,6 +1395,13 @@ struct lexer {
             }
 
             char *strtod_end = nullptr;
+            long long i64 = strtoll(token_start, &strtod_end, 10);
+            if (strtod_end == cursor) {
+                next.kind = token_kind::num;
+                next.f64 = (double)i64;
+                return;
+            }
+            strtod_end = nullptr;
             double f64 = strtod(token_start, &strtod_end);
             if (strtod_end == cursor) {
                 next.kind = token_kind::num;
@@ -1473,7 +1542,33 @@ inline std::string print(value x) {
         }
         return result + ")";
     }
-    case value_kind::string: return std::format("\"{}\"", unwrap_string_view(x));
+    case value_kind::string: {
+        std::string_view sv = unwrap_string_view(x);
+        std::string result = "\"";
+        result.reserve(sv.length() + 2);
+        for (auto c : sv) {
+            if (isprint(c) && c != '\"') {
+                result += c;
+                continue;
+            }
+            switch (c) {
+            case '\a': result += "\\a"; break;
+            case '\b': result += "\\b"; break;
+            case '\x1b': result += "\\x1b"; break;
+            case '\f': result += "\\f"; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            case '\v': result += "\\v"; break;
+            case '\\': result += "\\\\"; break;
+            case '\'': result += "\\'"; break;
+            case '\"': result += "\\\""; break;
+            case '\?': result += "\\x3f"; break;
+            default: result += std::format("\\x{:x}{:x}", (uint8_t)c >> 4, ((uint8_t)c & 0x0f));
+            }
+        }
+        return result + "\"";
+    }
     }
 }
 
