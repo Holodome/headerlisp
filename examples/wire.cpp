@@ -99,9 +99,8 @@ void processing_thread(int pipe_fd) {
             // so we can process the remaining part later.
             hl::value ast = hl::read(cursor, &end);
             cursor = end;
-            // Use hl::tagged_value or list(ast).iter().any_of<SayMyName, Calculate> to create std::variant-like
-            // accessor
-            auto msg = hl::tagged_value(ast);
+            // Use hl::tagged_value or list(ast).iter().tagged() to create std::variant-like accessor
+            hl::tagged_value msg{ast};
             if (msg.is<SayMyName>()) {
                 SayMyName d = msg.get<SayMyName>();
                 for (int i = 0; i < d.how_many_times; ++i) {
