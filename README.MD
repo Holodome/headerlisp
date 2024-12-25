@@ -14,7 +14,7 @@ std::string result = print(lst); // (2, 4, 6, ("hello, world"))
 
 There are three main use cases for headerlisp:
 
-1. *Parsers* - Instead of using [lex](https://en.wikipedia.org/wiki/Lex_(software)) and [bison](https://en.wikipedia.org/wiki/GNU_Bison) to write custom parser, lisp s-expressions can be used to define syntax. Headerlisp allows parsing s-expressions and traversing them.
+1. *Parsers* - Instead of using [lex](https://en.wikipedia.org/wiki/Lex_(software)) and [bison](https://en.wikipedia.org/wiki/GNU_Bison) (or something even more cursed like [boost::spirit](https://www.boost.org/doc/libs/1_86_0/libs/spirit/doc/html/index.html)) to create custom parser and doing it from scratch, lisp s-expressions can be used to define syntax. Headerlisp allows parsing s-expressions and traversing them.
 2. *DSLs* - Custom parsers allow easy writing of DSLs for different tasks, where using anything more complex would be too time-consuming.
 3. *Quick serialization/deserialization* - Headerlisp has abilities to read and write user-defined into and from s-expression trees. This can be used to implement ad-hoc serialization.
 
