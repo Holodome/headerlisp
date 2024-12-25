@@ -36,7 +36,7 @@ int main() {
     Person p2{"Adam", "There", 32};
     // hl::list automatically serializes its arguments. This can be done manually using hl::make_value
     auto lst = hl::list(p1, p2);
-    std::string serialized = print(lst);
+    std::string serialized = hl::print(lst);
     printf("serialized = %s\n", serialized.c_str()); // (("John" "Here" 23) ("Adam" "There" 32))
 
     auto deserialized = hl::read(serialized);
