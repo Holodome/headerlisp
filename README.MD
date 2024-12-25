@@ -1,6 +1,6 @@
 # headerlisp
 
-Lisp in C++.
+Lisp in C++20.
 
 More fundamentally, this is dead-simple dynamically-typed tool for processing lists inside C++.
 
