@@ -101,10 +101,9 @@ public:
     constexpr value &operator=(value &&) noexcept = default;
 
     constexpr static value make(uint64_t x) noexcept { return value(constructor_tag{}, x); }
-
     constexpr uint64_t internal() const noexcept { return u64_; }
 
-    constexpr value_range iter() const noexcept;
+    value_range iter() const noexcept;
 
 private:
     constexpr value(constructor_tag, uint64_t x) noexcept : u64_(x) {}
@@ -161,7 +160,7 @@ template <> struct list_tag<int> {
 //
 
 // There are more overloads for these functions below
-constexpr value make_value(value x) noexcept;
+inline value make_value(value x) noexcept;
 template <has_list_tag T> inline value make_tagged_value(T &&t);
 
 inline value new_string(const char *str, size_t length);
@@ -174,88 +173,88 @@ template <has_list_tag... Args> inline value tagged_list(Args &&...args);
 //
 // Type checkers
 //
-constexpr std::string_view value_kind_str(value_kind kind) noexcept;
-constexpr std::string_view value_kind_str(value x) noexcept;
-constexpr value_kind get_value_kind(value x) noexcept;
-constexpr bool is_num(value x) noexcept;
-constexpr bool is_obj(value x) noexcept;
-constexpr bool is_nil(value x) noexcept;
-constexpr bool is_true(value x) noexcept;
-constexpr bool is_cons(value x) noexcept;
-constexpr bool is_string(value x) noexcept;
-constexpr bool is_list(value x) noexcept;
+inline std::string_view value_kind_str(value_kind kind) noexcept;
+inline std::string_view value_kind_str(value x) noexcept;
+inline value_kind get_value_kind(value x) noexcept;
+inline bool is_num(value x) noexcept;
+inline bool is_obj(value x) noexcept;
+inline bool is_nil(value x) noexcept;
+inline bool is_true(value x) noexcept;
+inline bool is_cons(value x) noexcept;
+inline bool is_string(value x) noexcept;
+inline bool is_list(value x) noexcept;
 
 //
 // Unsafe functions that unwrap inner storage with assumption that type is correct
 //
-constexpr std::string_view unwrap_string_view(value x) noexcept;
-constexpr value &unwrap_car(value x) noexcept;
-constexpr value &unwrap_cdr(value x) noexcept;
+inline std::string_view unwrap_string_view(value x) noexcept;
+inline value &unwrap_car(value x) noexcept;
+inline value &unwrap_cdr(value x) noexcept;
 inline double unwrap_f64(value x) noexcept;
 // Unsafe cons mutators
-constexpr void unwrap_setcar(value cons, value car) noexcept;
-constexpr void unwrap_setcdr(value cons, value cdr) noexcept;
+inline void unwrap_setcar(value cons, value car) noexcept;
+inline void unwrap_setcdr(value cons, value cdr) noexcept;
 
 //
 // Checked data access
 //
-constexpr std::string_view as_string_view(value x);
+inline std::string_view as_string_view(value x);
 inline double as_num_f64(value x);
 inline int as_num_int(value x);
-constexpr value &car(value x);
-constexpr value &cdr(value x);
+inline value &car(value x);
+inline value &cdr(value x);
 
 struct cons_unapply_result {
     value &car, &cdr;
 };
-constexpr cons_unapply_result unapply_cons(value x);
+inline cons_unapply_result unapply_cons(value x);
 
 //
 // Library list accessors
 //
-constexpr size_t length(value lst);
+inline size_t length(value lst);
 
-constexpr value caar(value x);
-constexpr value cadr(value x);
-constexpr value cdar(value x);
-constexpr value cddr(value x);
-constexpr value caaar(value x);
-constexpr value caadr(value x);
-constexpr value cadar(value x);
-constexpr value caddr(value x);
-constexpr value cdaar(value x);
-constexpr value cdadr(value x);
-constexpr value cddar(value x);
-constexpr value cdddr(value x);
-constexpr value caaaar(value x);
-constexpr value caaadr(value x);
-constexpr value caadar(value x);
-constexpr value caaddr(value x);
-constexpr value cadaar(value x);
-constexpr value cadadr(value x);
-constexpr value caddar(value x);
-constexpr value cadddr(value x);
-constexpr value cdaaar(value x);
-constexpr value cdaadr(value x);
-constexpr value cdadar(value x);
-constexpr value cdaddr(value x);
-constexpr value cddaar(value x);
-constexpr value cddadr(value x);
-constexpr value cdddar(value x);
-constexpr value cddddr(value x);
+inline value caar(value x);
+inline value cadr(value x);
+inline value cdar(value x);
+inline value cddr(value x);
+inline value caaar(value x);
+inline value caadr(value x);
+inline value cadar(value x);
+inline value caddr(value x);
+inline value cdaar(value x);
+inline value cdadr(value x);
+inline value cddar(value x);
+inline value cdddr(value x);
+inline value caaaar(value x);
+inline value caaadr(value x);
+inline value caadar(value x);
+inline value caaddr(value x);
+inline value cadaar(value x);
+inline value cadadr(value x);
+inline value caddar(value x);
+inline value cadddr(value x);
+inline value cdaaar(value x);
+inline value cdaadr(value x);
+inline value cdadar(value x);
+inline value cdaddr(value x);
+inline value cddaar(value x);
+inline value cddadr(value x);
+inline value cdddar(value x);
+inline value cddddr(value x);
 
-constexpr value head(value x);
-constexpr value rest(value x);
-constexpr value first(value x);
-constexpr value second(value x);
-constexpr value third(value x);
-constexpr value fourth(value x);
-constexpr value fifth(value x);
-constexpr value sixth(value x);
-constexpr value seventh(value x);
-constexpr value eighth(value x);
-constexpr value ninth(value x);
-constexpr value tenth(value x);
+inline value head(value x);
+inline value rest(value x);
+inline value first(value x);
+inline value second(value x);
+inline value third(value x);
+inline value fourth(value x);
+inline value fifth(value x);
+inline value sixth(value x);
+inline value seventh(value x);
+inline value eighth(value x);
+inline value ninth(value x);
+inline value tenth(value x);
 
 struct list_bind_2 {
     value a, b;
@@ -267,15 +266,15 @@ struct list_bind_4 {
     value a, b, c, d;
 };
 
-constexpr list_bind_2 first_2(value x);
-constexpr list_bind_3 first_3(value x);
-constexpr list_bind_4 first_4(value x);
+inline list_bind_2 first_2(value x);
+inline list_bind_3 first_3(value x);
+inline list_bind_4 first_4(value x);
 
 //
 // Library list manipulation
 //
-constexpr void add_last(value &first, value &last, value x);
-constexpr value reverse(value lst);
+inline void add_last(value &first, value &last, value x);
+inline value reverse(value lst);
 
 inline value append(value a, value b);
 inline value append(value a, value b, value c);
@@ -295,7 +294,7 @@ inline value cartesian_product(value lst1, value lst2);
 inline value cartesian_product(value lst1, value lst2, value lst3);
 
 inline value assoc(value v, value lst);
-constexpr value nth(value lst, size_t idx);
+inline value nth(value lst, size_t idx);
 template <typename F> inline std::optional<size_t> index_of(value lst, value v, F f);
 inline std::optional<size_t> index_of(value lst, value v);
 template <typename F> inline bool member(value v, value lst, F f);
@@ -316,24 +315,24 @@ inline bool is_negative(value x);
 //
 // Equality and operator overloading
 //
-constexpr bool is_equal(value left, value right) noexcept;
+inline bool is_equal(value left, value right) noexcept;
 
-constexpr bool operator==(value left, value right);
-constexpr bool operator==(value left, double right);
-constexpr bool operator==(value left, std::string_view right);
+inline bool operator==(value left, value right);
+inline bool operator==(value left, double right);
+inline bool operator==(value left, std::string_view right);
 
-constexpr bool operator!=(value left, value right);
-constexpr bool operator!=(value left, double right);
-constexpr bool operator!=(value left, std::string_view right);
+inline bool operator!=(value left, value right);
+inline bool operator!=(value left, double right);
+inline bool operator!=(value left, std::string_view right);
 
-constexpr value operator+(value left, value right);
-constexpr value operator+(value left, double right);
-constexpr value operator-(value left, value right);
-constexpr value operator-(value left, double right);
-constexpr value operator*(value left, value right);
-constexpr value operator*(value left, double right);
-constexpr value operator/(value left, value right);
-constexpr value operator/(value left, double right);
+inline value operator+(value left, value right);
+inline value operator+(value left, double right);
+inline value operator-(value left, value right);
+inline value operator-(value left, double right);
+inline value operator*(value left, value right);
+inline value operator*(value left, double right);
+inline value operator/(value left, value right);
+inline value operator/(value left, double right);
 
 //
 // IO
@@ -352,7 +351,7 @@ constexpr uint64_t HL_SIGN_BIT = ((uint64_t)1 << 63);
 constexpr uint64_t HL_QNAN = (uint64_t)0x7ffc000000000000;
 
 constexpr value nan_box_singleton(value_kind kind) noexcept { return value::make(HL_QNAN | (uint64_t)kind); }
-constexpr uint8_t nan_unbox_singleton(value v) noexcept { return v.internal() & ~(HL_QNAN); }
+inline uint8_t nan_unbox_singleton(value v) noexcept { return v.internal() & ~(HL_QNAN); }
 inline value nan_box_ptr(void *ptr) noexcept { return value::make(((uintptr_t)ptr) | (HL_SIGN_BIT | HL_QNAN)); }
 
 struct obj {
@@ -379,21 +378,21 @@ struct obj_str {
 
 inline obj *nan_unbox_ptr(value x) noexcept { return (obj *)(uintptr_t)(x.internal() & ~(HL_SIGN_BIT | HL_QNAN)); }
 
-constexpr struct obj_cons *unwrap_cons(value x) noexcept {
+inline struct obj_cons *unwrap_cons(value x) noexcept {
     assert(is_obj(x));
     obj *obj = nan_unbox_ptr(x);
     assert(obj->kind == value_kind::cons);
     return (obj_cons *)obj->as;
 }
 
-constexpr obj_str *unwrap_string(value x) noexcept {
+inline obj_str *unwrap_string(value x) noexcept {
     assert(is_obj(x));
     obj *obj = nan_unbox_ptr(x);
     assert(obj->kind == value_kind::string);
     return (obj_str *)obj->as;
 }
 
-constexpr uint32_t djb2(const char *src, const char *dst) noexcept {
+inline uint32_t djb2(const char *src, const char *dst) noexcept {
     uint32_t hash = 5381;
     do {
         int c = *src++;
@@ -413,7 +412,7 @@ inline void *alloc(context *ctx, size_t size) {
     return result;
 }
 
-constexpr bool hex_symbol_to_int(int x, int *value) noexcept {
+inline bool hex_symbol_to_int(int x, int *value) noexcept {
     if ('0' <= x && x <= '9') {
         *value = x - '0';
         return true;
@@ -509,16 +508,16 @@ constexpr value tru = internal::nan_box_singleton(value_kind::tru);
 
 // Use concepts with same_as<T> here instead of concrete type arguments to avoid implicit conversions.
 // They are very hard to work around.
-constexpr value make_value(value x) noexcept { return x; }
-constexpr value make_value(std::same_as<bool> auto x) noexcept { return x ? tru : nil; }
-constexpr value make_value(std::same_as<double> auto x) noexcept {
+inline value make_value(value x) noexcept { return x; }
+inline value make_value(std::same_as<bool> auto x) noexcept { return x ? tru : nil; }
+inline value make_value(std::same_as<double> auto x) noexcept {
     uint64_t u64;
     memcpy(&u64, &x, sizeof(u64));
     return value::make(u64);
 }
-constexpr value make_value(std::same_as<int> auto x) noexcept { return make_value((double)x); }
-constexpr value make_value(std::same_as<size_t> auto x) noexcept { return make_value((double)x); }
-constexpr value make_value(std::same_as<nullptr_t> auto) noexcept { return nil; }
+inline value make_value(std::same_as<int> auto x) noexcept { return make_value((double)x); }
+inline value make_value(std::same_as<size_t> auto x) noexcept { return make_value((double)x); }
+inline value make_value(std::same_as<nullptr_t> auto) noexcept { return nil; }
 template <typename T>
     requires(std::constructible_from<std::string_view, T> && !std::is_same_v<T, nullptr_t>)
 inline value make_value(T s) {
@@ -570,23 +569,23 @@ public:
     using reference = value &;
     using iterator_category = std::forward_iterator_tag;
 
-    constexpr value_iter() = delete;
-    constexpr value_iter(const value_iter &) noexcept = default;
-    constexpr value_iter(value_iter &&) noexcept = default;
-    constexpr value_iter &operator=(const value_iter &) noexcept = default;
-    constexpr value_iter &operator=(value_iter &&) noexcept = default;
+    value_iter() = delete;
+    value_iter(const value_iter &) noexcept = default;
+    value_iter(value_iter &&) noexcept = default;
+    value_iter &operator=(const value_iter &) noexcept = default;
+    value_iter &operator=(value_iter &&) noexcept = default;
 
-    constexpr explicit value_iter(value x) noexcept : current_(x) {}
+    explicit value_iter(value x) noexcept : current_(x) {}
 
-    constexpr reference operator*() { return car(current_); }
-    constexpr bool operator==(value_iter other) noexcept { return current_.internal() == other.current_.internal(); }
+    reference operator*() { return car(current_); }
+    bool operator==(value_iter other) noexcept { return current_.internal() == other.current_.internal(); }
 
-    constexpr value_iter operator++(int) const {
+    value_iter operator++(int) const {
         value_iter tmp = *this;
         ++tmp;
         return tmp;
     }
-    constexpr value_iter &operator++() {
+    value_iter &operator++() {
         current_ = cdr(current_);
         return *this;
     }
@@ -603,32 +602,32 @@ public:
     using reference = T &;
     using iterator_category = std::forward_iterator_tag;
 
-    constexpr deserializing_value_iter() = delete;
-    constexpr deserializing_value_iter(const deserializing_value_iter &) noexcept = default;
-    constexpr deserializing_value_iter(deserializing_value_iter &&) noexcept = default;
-    constexpr deserializing_value_iter &operator=(const deserializing_value_iter &) noexcept = default;
-    constexpr deserializing_value_iter &operator=(deserializing_value_iter &&) noexcept = default;
+    deserializing_value_iter() = delete;
+    deserializing_value_iter(const deserializing_value_iter &) noexcept = default;
+    deserializing_value_iter(deserializing_value_iter &&) noexcept = default;
+    deserializing_value_iter &operator=(const deserializing_value_iter &) noexcept = default;
+    deserializing_value_iter &operator=(deserializing_value_iter &&) noexcept = default;
 
-    explicit constexpr deserializing_value_iter(value x) noexcept : current_(x) { update_current_value(); }
+    explicit deserializing_value_iter(value x) noexcept : current_(x) { update_current_value(); }
 
-    constexpr reference operator*() noexcept { return current_value_; }
-    constexpr bool operator==(deserializing_value_iter other) noexcept {
+    reference operator*() noexcept { return current_value_; }
+    bool operator==(deserializing_value_iter other) noexcept {
         return current_.internal() == other.current_.internal();
     }
 
-    constexpr deserializing_value_iter operator++(int) const {
+    deserializing_value_iter operator++(int) const {
         deserializing_value_iter tmp = *this;
         ++tmp;
         return tmp;
     }
-    constexpr deserializing_value_iter &operator++() {
+    deserializing_value_iter &operator++() {
         current_ = cdr(current_);
         update_current_value();
         return *this;
     }
 
 private:
-    constexpr void update_current_value() {
+    void update_current_value() {
         if (!is_nil(current_))
             current_value_ = from_list<T>{}(car(current_));
     }
@@ -639,25 +638,25 @@ private:
 
 class tagged_value {
 public:
-    constexpr tagged_value() = default;
-    constexpr tagged_value(const tagged_value &) noexcept = default;
-    constexpr tagged_value(tagged_value &&) noexcept = default;
-    constexpr tagged_value &operator=(const tagged_value &) noexcept = default;
-    constexpr tagged_value &operator=(tagged_value &&) noexcept = default;
+    tagged_value() = default;
+    tagged_value(const tagged_value &) noexcept = default;
+    tagged_value(tagged_value &&) noexcept = default;
+    tagged_value &operator=(const tagged_value &) noexcept = default;
+    tagged_value &operator=(tagged_value &&) noexcept = default;
 
-    constexpr explicit tagged_value(value data) : tag_(as_string_view(car(data))), data_(cdr(data)) {}
-    constexpr tagged_value(std::string_view tag, value data) noexcept : tag_(tag), data_(data) {}
+    explicit tagged_value(value data) : tag_(as_string_view(car(data))), data_(cdr(data)) {}
+    tagged_value(std::string_view tag, value data) noexcept : tag_(tag), data_(data) {}
 
     template <has_from_list T> T get() const {
         assert(is<T>());
         return from_list<T>{}(data_);
     }
 
-    template <has_list_tag T> constexpr bool is() const noexcept { return tag_ == list_tag<T>::tag; }
-    constexpr bool is_num() const noexcept { return is<double>(); }
-    constexpr bool is_string() const noexcept { return is<std::string_view>(); }
+    template <has_list_tag T> bool is() const noexcept { return tag_ == list_tag<T>::tag; }
+    bool is_num() const noexcept { return is<double>(); }
+    bool is_string() const noexcept { return is<std::string_view>(); }
 
-    constexpr std::string_view tag() const noexcept { return tag_; }
+    std::string_view tag() const noexcept { return tag_; }
 
 private:
     std::string_view tag_;
@@ -672,32 +671,32 @@ public:
     using reference = value_type &;
     using iterator_category = std::forward_iterator_tag;
 
-    constexpr deserializing_tagged_value_iter() = delete;
-    constexpr deserializing_tagged_value_iter(const deserializing_tagged_value_iter &) noexcept = default;
-    constexpr deserializing_tagged_value_iter(deserializing_tagged_value_iter &&) noexcept = default;
-    constexpr deserializing_tagged_value_iter &operator=(const deserializing_tagged_value_iter &) noexcept = default;
-    constexpr deserializing_tagged_value_iter &operator=(deserializing_tagged_value_iter &&) noexcept = default;
+    deserializing_tagged_value_iter() = delete;
+    deserializing_tagged_value_iter(const deserializing_tagged_value_iter &) noexcept = default;
+    deserializing_tagged_value_iter(deserializing_tagged_value_iter &&) noexcept = default;
+    deserializing_tagged_value_iter &operator=(const deserializing_tagged_value_iter &) noexcept = default;
+    deserializing_tagged_value_iter &operator=(deserializing_tagged_value_iter &&) noexcept = default;
 
-    constexpr explicit deserializing_tagged_value_iter(value x) : current_(x) { update_current_value(); }
+    explicit deserializing_tagged_value_iter(value x) : current_(x) { update_current_value(); }
 
-    constexpr reference operator*() noexcept { return current_element_; }
-    constexpr bool operator==(deserializing_tagged_value_iter other) const noexcept {
+    reference operator*() noexcept { return current_element_; }
+    bool operator==(deserializing_tagged_value_iter other) const noexcept {
         return current_.internal() == other.current_.internal();
     }
 
-    constexpr deserializing_tagged_value_iter operator++(int) const {
+    deserializing_tagged_value_iter operator++(int) const {
         deserializing_tagged_value_iter tmp = *this;
         ++tmp;
         return tmp;
     }
-    constexpr deserializing_tagged_value_iter &operator++() {
+    deserializing_tagged_value_iter &operator++() {
         current_ = cdr(current_);
         update_current_value();
         return *this;
     }
 
 private:
-    constexpr void update_current_value() {
+    void update_current_value() {
         if (!is_nil(current_)) {
             value item = car(current_);
             auto [tag, data] = unapply_cons(item);
@@ -711,16 +710,16 @@ private:
 
 template <has_from_list T> class deserializing_value_range {
 public:
-    constexpr deserializing_value_range() = delete;
-    constexpr deserializing_value_range(const deserializing_value_range &) noexcept = default;
-    constexpr deserializing_value_range(deserializing_value_range &&) noexcept = default;
-    constexpr deserializing_value_range &operator=(const deserializing_value_range &) noexcept = default;
-    constexpr deserializing_value_range &operator=(deserializing_value_range &&) noexcept = default;
+    deserializing_value_range() = delete;
+    deserializing_value_range(const deserializing_value_range &) noexcept = default;
+    deserializing_value_range(deserializing_value_range &&) noexcept = default;
+    deserializing_value_range &operator=(const deserializing_value_range &) noexcept = default;
+    deserializing_value_range &operator=(deserializing_value_range &&) noexcept = default;
 
-    constexpr explicit deserializing_value_range(value x) noexcept : start_(x) {}
+    explicit deserializing_value_range(value x) noexcept : start_(x) {}
 
-    constexpr deserializing_value_iter<T> begin() const noexcept { return deserializing_value_iter<T>{start_}; }
-    constexpr deserializing_value_iter<T> end() const noexcept { return deserializing_value_iter<T>{nil}; }
+    deserializing_value_iter<T> begin() const noexcept { return deserializing_value_iter<T>{start_}; }
+    deserializing_value_iter<T> end() const noexcept { return deserializing_value_iter<T>{nil}; }
 
 private:
     value start_;
@@ -728,16 +727,16 @@ private:
 
 class deserializing_tagged_value_range {
 public:
-    constexpr deserializing_tagged_value_range() = delete;
-    constexpr deserializing_tagged_value_range(const deserializing_tagged_value_range &) noexcept = default;
-    constexpr deserializing_tagged_value_range(deserializing_tagged_value_range &&) noexcept = default;
-    constexpr deserializing_tagged_value_range &operator=(const deserializing_tagged_value_range &) noexcept = default;
-    constexpr deserializing_tagged_value_range &operator=(deserializing_tagged_value_range &&) noexcept = default;
+    deserializing_tagged_value_range() = delete;
+    deserializing_tagged_value_range(const deserializing_tagged_value_range &) noexcept = default;
+    deserializing_tagged_value_range(deserializing_tagged_value_range &&) noexcept = default;
+    deserializing_tagged_value_range &operator=(const deserializing_tagged_value_range &) noexcept = default;
+    deserializing_tagged_value_range &operator=(deserializing_tagged_value_range &&) noexcept = default;
 
-    constexpr explicit deserializing_tagged_value_range(value x) noexcept : start_(x) {}
+    explicit deserializing_tagged_value_range(value x) noexcept : start_(x) {}
 
-    constexpr deserializing_tagged_value_iter begin() const noexcept { return deserializing_tagged_value_iter{start_}; }
-    constexpr deserializing_tagged_value_iter end() const noexcept { return deserializing_tagged_value_iter{nil}; }
+    deserializing_tagged_value_iter begin() const noexcept { return deserializing_tagged_value_iter{start_}; }
+    deserializing_tagged_value_iter end() const noexcept { return deserializing_tagged_value_iter{nil}; }
 
 private:
     value start_;
@@ -745,35 +744,33 @@ private:
 
 class value_range {
 public:
-    constexpr value_range() = delete;
-    constexpr value_range(const value_range &) noexcept = default;
-    constexpr value_range(value_range &&) noexcept = default;
-    constexpr value_range &operator=(const value_range &) noexcept = default;
-    constexpr value_range &operator=(value_range &&) noexcept = default;
+    value_range() = delete;
+    value_range(const value_range &) noexcept = default;
+    value_range(value_range &&) noexcept = default;
+    value_range &operator=(const value_range &) noexcept = default;
+    value_range &operator=(value_range &&) noexcept = default;
 
-    constexpr explicit value_range(value x) noexcept : start_(x) {}
+    explicit value_range(value x) noexcept : start_(x) {}
 
-    constexpr value_iter begin() const noexcept { return value_iter{start_}; }
-    constexpr value_iter end() const noexcept { return value_iter{nil}; }
+    value_iter begin() const noexcept { return value_iter{start_}; }
+    value_iter end() const noexcept { return value_iter{nil}; }
 
-    template <has_from_list T> constexpr deserializing_value_range<T> as() const noexcept {
+    template <has_from_list T> deserializing_value_range<T> as() const noexcept {
         return deserializing_value_range<T>(start_);
     }
-    constexpr deserializing_tagged_value_range tagged() const noexcept {
-        return deserializing_tagged_value_range(start_);
-    }
+    deserializing_tagged_value_range tagged() const noexcept { return deserializing_tagged_value_range(start_); }
 
 private:
     value start_;
 };
 
-constexpr value_range value::iter() const noexcept { return value_range(*this); }
+inline value_range value::iter() const noexcept { return value_range(*this); }
 
 //
 // Type checkers
 //
 
-constexpr std::string_view value_kind_str(value_kind kind) noexcept {
+inline std::string_view value_kind_str(value_kind kind) noexcept {
     switch (kind) {
     case value_kind::num: return "num";
     case value_kind::nil: return "nil";
@@ -783,40 +780,38 @@ constexpr std::string_view value_kind_str(value_kind kind) noexcept {
     }
     __builtin_unreachable();
 }
-constexpr std::string_view value_kind_str(value x) noexcept { return value_kind_str(get_value_kind(x)); }
+inline std::string_view value_kind_str(value x) noexcept { return value_kind_str(get_value_kind(x)); }
 
-constexpr value_kind get_value_kind(value x) noexcept {
+inline value_kind get_value_kind(value x) noexcept {
     return is_obj(x) ? internal::nan_unbox_ptr(x)->kind : (value_kind)internal::nan_unbox_singleton(x);
 }
 
-constexpr bool is_num(value x) noexcept { return (x.internal() & internal::HL_QNAN) != internal::HL_QNAN; }
-constexpr bool is_obj(value x) noexcept {
+inline bool is_num(value x) noexcept { return (x.internal() & internal::HL_QNAN) != internal::HL_QNAN; }
+inline bool is_obj(value x) noexcept {
     return ((x.internal() & (internal::HL_QNAN | internal::HL_SIGN_BIT)) ==
             (internal::HL_QNAN | internal::HL_SIGN_BIT));
 }
 
-constexpr bool is_nil(value x) noexcept { return x.internal() == nil.internal(); }
-constexpr bool is_true(value x) noexcept { return x.internal() == tru.internal(); }
-constexpr bool is_cons(value x) noexcept { return is_obj(x) && internal::nan_unbox_ptr(x)->kind == value_kind::cons; }
-constexpr bool is_string(value x) noexcept {
-    return is_obj(x) && internal::nan_unbox_ptr(x)->kind == value_kind::string;
-}
-constexpr bool is_list(value x) noexcept { return is_cons(x) || is_nil(x); }
+inline bool is_nil(value x) noexcept { return x.internal() == nil.internal(); }
+inline bool is_true(value x) noexcept { return x.internal() == tru.internal(); }
+inline bool is_cons(value x) noexcept { return is_obj(x) && internal::nan_unbox_ptr(x)->kind == value_kind::cons; }
+inline bool is_string(value x) noexcept { return is_obj(x) && internal::nan_unbox_ptr(x)->kind == value_kind::string; }
+inline bool is_list(value x) noexcept { return is_cons(x) || is_nil(x); }
 
 //
 // Unsafe accessors
 //
 
-constexpr std::string_view unwrap_string_view(value x) noexcept {
+inline std::string_view unwrap_string_view(value x) noexcept {
     internal::obj_str *str = internal::unwrap_string(x);
     return {str->str, str->length};
 }
 
-constexpr value &unwrap_car(value x) noexcept {
+inline value &unwrap_car(value x) noexcept {
     internal::obj_cons *obj = internal::unwrap_cons(x);
     return obj->car;
 }
-constexpr value &unwrap_cdr(value x) noexcept {
+inline value &unwrap_cdr(value x) noexcept {
     internal::obj_cons *obj = internal::unwrap_cons(x);
     return obj->cdr;
 }
@@ -826,14 +821,14 @@ inline double unwrap_f64(value x) noexcept {
     memcpy(&result, &x, sizeof(value));
     return result;
 }
-constexpr void unwrap_setcar(value cons, value car) noexcept { internal::unwrap_cons(cons)->car = car; }
-constexpr void unwrap_setcdr(value cons, value cdr) noexcept { internal::unwrap_cons(cons)->cdr = cdr; }
+inline void unwrap_setcar(value cons, value car) noexcept { internal::unwrap_cons(cons)->car = car; }
+inline void unwrap_setcdr(value cons, value cdr) noexcept { internal::unwrap_cons(cons)->cdr = cdr; }
 
 //
 // Checked data access
 //
 
-constexpr std::string_view as_string_view(value x) {
+inline std::string_view as_string_view(value x) {
     if (!is_string(x))
         throw hl_exception("called 'as_string_view()' on non-string {}", value_kind_str(x));
     return unwrap_string_view(x);
@@ -844,17 +839,17 @@ inline double as_num_f64(value x) {
     return unwrap_f64(x);
 }
 inline int as_num_int(value x) { return (int)as_num_f64(x); }
-constexpr value &car(value x) {
+inline value &car(value x) {
     if (!is_cons(x))
         throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
     return unwrap_car(x);
 }
-constexpr value &cdr(value x) {
+inline value &cdr(value x) {
     if (!is_cons(x))
         throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
     return unwrap_cdr(x);
 }
-constexpr cons_unapply_result unapply_cons(value x) {
+inline cons_unapply_result unapply_cons(value x) {
     if (!is_cons(x))
         throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
     return {unwrap_car(x), unwrap_cdr(x)};
@@ -864,7 +859,7 @@ constexpr cons_unapply_result unapply_cons(value x) {
 // Library list accessors
 //
 
-constexpr size_t length(value lst) {
+inline size_t length(value lst) {
     size_t len = 0;
     for (auto it : lst.iter()) {
         (void)it;
@@ -873,57 +868,57 @@ constexpr size_t length(value lst) {
     return len;
 }
 
-constexpr value caar(value x) { return car(car(x)); }
-constexpr value cadr(value x) { return car(cdr(x)); }
-constexpr value cdar(value x) { return cdr(car(x)); }
-constexpr value cddr(value x) { return cdr(cdr(x)); }
-constexpr value caaar(value x) { return car(car(car(x))); }
-constexpr value caadr(value x) { return car(car(cdr(x))); }
-constexpr value cadar(value x) { return car(cdr(car(x))); }
-constexpr value caddr(value x) { return car(cdr(cdr(x))); }
-constexpr value cdaar(value x) { return cdr(car(car(x))); }
-constexpr value cdadr(value x) { return cdr(car(cdr(x))); }
-constexpr value cddar(value x) { return cdr(cdr(car(x))); }
-constexpr value cdddr(value x) { return cdr(cdr(cdr(x))); }
-constexpr value caaaar(value x) { return car(car(car(car(x)))); }
-constexpr value caaadr(value x) { return car(car(car(cdr(x)))); }
-constexpr value caadar(value x) { return car(car(cdr(car(x)))); }
-constexpr value caaddr(value x) { return car(car(cdr(cdr(x)))); }
-constexpr value cadaar(value x) { return car(cdr(car(car(x)))); }
-constexpr value cadadr(value x) { return car(cdr(car(cdr(x)))); }
-constexpr value caddar(value x) { return car(cdr(cdr(car(x)))); }
-constexpr value cadddr(value x) { return car(cdr(cdr(cdr(x)))); }
-constexpr value cdaaar(value x) { return cdr(car(car(car(x)))); }
-constexpr value cdaadr(value x) { return cdr(car(car(cdr(x)))); }
-constexpr value cdadar(value x) { return cdr(car(cdr(car(x)))); }
-constexpr value cdaddr(value x) { return cdr(car(cdr(cdr(x)))); }
-constexpr value cddaar(value x) { return cdr(cdr(car(car(x)))); }
-constexpr value cddadr(value x) { return cdr(cdr(car(cdr(x)))); }
-constexpr value cdddar(value x) { return cdr(cdr(cdr(car(x)))); }
-constexpr value cddddr(value x) { return cdr(cdr(cdr(cdr(x)))); }
+inline value caar(value x) { return car(car(x)); }
+inline value cadr(value x) { return car(cdr(x)); }
+inline value cdar(value x) { return cdr(car(x)); }
+inline value cddr(value x) { return cdr(cdr(x)); }
+inline value caaar(value x) { return car(car(car(x))); }
+inline value caadr(value x) { return car(car(cdr(x))); }
+inline value cadar(value x) { return car(cdr(car(x))); }
+inline value caddr(value x) { return car(cdr(cdr(x))); }
+inline value cdaar(value x) { return cdr(car(car(x))); }
+inline value cdadr(value x) { return cdr(car(cdr(x))); }
+inline value cddar(value x) { return cdr(cdr(car(x))); }
+inline value cdddr(value x) { return cdr(cdr(cdr(x))); }
+inline value caaaar(value x) { return car(car(car(car(x)))); }
+inline value caaadr(value x) { return car(car(car(cdr(x)))); }
+inline value caadar(value x) { return car(car(cdr(car(x)))); }
+inline value caaddr(value x) { return car(car(cdr(cdr(x)))); }
+inline value cadaar(value x) { return car(cdr(car(car(x)))); }
+inline value cadadr(value x) { return car(cdr(car(cdr(x)))); }
+inline value caddar(value x) { return car(cdr(cdr(car(x)))); }
+inline value cadddr(value x) { return car(cdr(cdr(cdr(x)))); }
+inline value cdaaar(value x) { return cdr(car(car(car(x)))); }
+inline value cdaadr(value x) { return cdr(car(car(cdr(x)))); }
+inline value cdadar(value x) { return cdr(car(cdr(car(x)))); }
+inline value cdaddr(value x) { return cdr(car(cdr(cdr(x)))); }
+inline value cddaar(value x) { return cdr(cdr(car(car(x)))); }
+inline value cddadr(value x) { return cdr(cdr(car(cdr(x)))); }
+inline value cdddar(value x) { return cdr(cdr(cdr(car(x)))); }
+inline value cddddr(value x) { return cdr(cdr(cdr(cdr(x)))); }
 
-constexpr value head(value x) { return car(x); }
-constexpr value rest(value x) { return cdr(x); }
-constexpr value first(value x) { return car(x); }
-constexpr value second(value x) { return cadr(x); }
-constexpr value third(value x) { return caddr(x); }
-constexpr value fourth(value x) { return cadddr(x); }
-constexpr value fifth(value x) { return car(cddddr(x)); }
-constexpr value sixth(value x) { return cadr(cddddr(x)); }
-constexpr value seventh(value x) { return caddr(cddddr(x)); }
-constexpr value eighth(value x) { return cadddr(cddddr(x)); }
-constexpr value ninth(value x) { return car(cdddr(cddddr(x))); }
-constexpr value tenth(value x) { return cadr(cdddr(cddddr(x))); }
+inline value head(value x) { return car(x); }
+inline value rest(value x) { return cdr(x); }
+inline value first(value x) { return car(x); }
+inline value second(value x) { return cadr(x); }
+inline value third(value x) { return caddr(x); }
+inline value fourth(value x) { return cadddr(x); }
+inline value fifth(value x) { return car(cddddr(x)); }
+inline value sixth(value x) { return cadr(cddddr(x)); }
+inline value seventh(value x) { return caddr(cddddr(x)); }
+inline value eighth(value x) { return cadddr(cddddr(x)); }
+inline value ninth(value x) { return car(cdddr(cddddr(x))); }
+inline value tenth(value x) { return cadr(cdddr(cddddr(x))); }
 
-constexpr list_bind_2 first_2(value x) { return {first(x), second(x)}; }
-constexpr list_bind_3 first_3(value x) { return {first(x), second(x), third(x)}; }
-constexpr list_bind_4 first_4(value x) { return {first(x), second(x), third(x), fourth(x)}; }
+inline list_bind_2 first_2(value x) { return {first(x), second(x)}; }
+inline list_bind_3 first_3(value x) { return {first(x), second(x), third(x)}; }
+inline list_bind_4 first_4(value x) { return {first(x), second(x), third(x), fourth(x)}; }
 
 //
 // Library list manipulation
 //
 
-constexpr void add_last(value &first, value &last, value x) {
+inline void add_last(value &first, value &last, value x) {
     if (is_nil(last)) {
         first = last = cons(x, nil);
     } else {
@@ -932,7 +927,7 @@ constexpr void add_last(value &first, value &last, value x) {
         last = new_last;
     }
 }
-constexpr value reverse(value lst) {
+inline value reverse(value lst) {
     value result = nil;
     for (auto it : lst.iter()) {
         result = cons(it, result);
@@ -1087,7 +1082,7 @@ inline value assoc(value v, value lst) {
     return nil;
 }
 
-constexpr value nth(value lst, size_t idx) {
+inline value nth(value lst, size_t idx) {
     while (idx--) {
         lst = cdr(lst);
     }
@@ -1169,7 +1164,7 @@ inline bool is_negative(value x) {
 // Equality and operator overloading
 //
 
-constexpr bool is_equal(value left, value right) noexcept {
+inline bool is_equal(value left, value right) noexcept {
     value_kind kind = get_value_kind(left);
     if (get_value_kind(right) != kind)
         return false;
@@ -1189,7 +1184,7 @@ constexpr bool is_equal(value left, value right) noexcept {
     __builtin_unreachable();
 }
 
-constexpr bool operator==(value left, value right) {
+inline bool operator==(value left, value right) {
     if (is_num(left) || is_num(right)) {
         if (!is_num(left))
             throw hl_exception("'==' called on non-number {}", value_kind_str(left));
@@ -1206,18 +1201,18 @@ constexpr bool operator==(value left, value right) {
     }
     throw hl_exception("unexpected types for '==' {} {}", value_kind_str(left), value_kind_str(right));
 }
-constexpr bool operator==(value left, double right) {
+inline bool operator==(value left, double right) {
     if (!is_num(left))
         throw hl_exception("'==' called on non-number {}", value_kind_str(left));
     return unwrap_f64(left) == right;
 }
-constexpr bool operator==(value left, std::string_view right) {
+inline bool operator==(value left, std::string_view right) {
     if (!is_string(left))
         throw hl_exception("'==' called on non-number {}", value_kind_str(left));
     return unwrap_string_view(left) == right;
 }
 
-constexpr bool operator!=(value left, value right) {
+inline bool operator!=(value left, value right) {
     if (is_num(left) || is_num(right)) {
         if (!is_num(left))
             throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
@@ -1234,44 +1229,44 @@ constexpr bool operator!=(value left, value right) {
     }
     throw hl_exception("unexpected types for '!=' {} {}", value_kind_str(left), value_kind_str(right));
 }
-constexpr bool operator!=(value left, double x) {
+inline bool operator!=(value left, double x) {
     if (!is_num(left))
         throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
     return unwrap_f64(left) != x;
 }
-constexpr bool operator!=(value left, std::string_view right) {
+inline bool operator!=(value left, std::string_view right) {
     if (!is_num(left))
         throw hl_exception("'==' called on non-number {}", value_kind_str(left));
     return unwrap_string_view(left) != right;
 }
 
-constexpr value operator+(value left, value right) {
+inline value operator+(value left, value right) {
     if (!is_num(left))
         throw hl_exception("'+' called on non-number {}", value_kind_str(left));
     if (!is_num(right))
         throw hl_exception("'+' called on non-number {}", value_kind_str(right));
     return make_value(unwrap_f64(left) + unwrap_f64(right));
 }
-constexpr value operator-(value left, value right) {
+inline value operator-(value left, value right) {
     if (!is_num(left))
         throw hl_exception("'-' called on non-number {}", value_kind_str(left));
     if (!is_num(right))
         throw hl_exception("'-' called on non-number {}", value_kind_str(right));
     return make_value(unwrap_f64(left) - unwrap_f64(right));
 }
-constexpr value operator*(value left, value right) {
+inline value operator*(value left, value right) {
     if (!is_num(left))
         throw hl_exception("'*' called on non-number {}", value_kind_str(left));
     if (!is_num(right))
         throw hl_exception("'*' called on non-number {}", value_kind_str(right));
     return make_value(unwrap_f64(left) * unwrap_f64(right));
 }
-constexpr value operator*(value left, double right) {
+inline value operator*(value left, double right) {
     if (!is_num(left))
         throw hl_exception("'*' called on non-number {}", value_kind_str(left));
     return make_value(unwrap_f64(left) * right);
 }
-constexpr value operator/(value left, value right) {
+inline value operator/(value left, value right) {
     if (!is_num(left))
         throw hl_exception("'/' called on non-number {}", value_kind_str(left));
     if (!is_num(right))
