@@ -2,7 +2,7 @@
 
 Lisp in C++20.
 
-More fundamentally, this is dead-simple dynamically-typed tool for processing lists inside C++.
+More fundamentally, this is dead-simple dynamically-typed tool for processing lists inside C++ with additional serialization and deserialization abilities for user-defined types.
 
 ```cpp
 auto lst = list(1, 2, 3, list("hello, world"));
@@ -14,7 +14,7 @@ std::string result = print(lst); // (2, 4, 6, ("hello, world"))
 
 There are three main use cases for headerlisp:
 
-1. *Parsers* - Instead of using [lex](https://en.wikipedia.org/wiki/Lex_(software)) to write custom parser, lisp s-expressions can be used to define syntax. Headerlisp allows parsing s-expressions and traversing them.
+1. *Parsers* - Instead of using [lex](https://en.wikipedia.org/wiki/Lex_(software)) and [bison](https://en.wikipedia.org/wiki/GNU_Bison) to write custom parser, lisp s-expressions can be used to define syntax. Headerlisp allows parsing s-expressions and traversing them.
 2. *DSLs* - Custom parsers allow easy writing of DSLs for different tasks, where using anything more complex would be too time-consuming.
 3. *Quick serialization/deserialization* - Headerlisp has abilities to read and write user-defined into and from s-expression trees. This can be used to implement ad-hoc serialization.
 
