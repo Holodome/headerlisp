@@ -161,14 +161,14 @@ template <> struct list_tag<int> {
 
 // There are more overloads for these functions below
 inline value make_value(value x) noexcept;
-template <has_list_tag T> inline value make_tagged_value(T &&t);
+template <has_list_tag T> value make_tagged_value(T &&t);
 
 inline value new_string(const char *str, size_t length);
 inline value new_stringz(const char *str);
 inline value cons(value car, value cdr);
 
-template <typename... Args> inline value list(Args &&...args);
-template <has_list_tag... Args> inline value tagged_list(Args &&...args);
+template <typename... Args> value list(Args &&...args);
+template <has_list_tag... Args> value tagged_list(Args &&...args);
 
 //
 // Type checkers
@@ -278,30 +278,30 @@ inline value reverse(value lst);
 
 inline value append(value a, value b);
 inline value append(value a, value b, value c);
-template <typename F> inline value map(F f, value lst);
-template <typename F> inline value map(F f, value lst1, value lst2);
-template <typename F> inline bool all(F f, value lst);
-template <typename F> inline bool any(F f, value lst);
-template <typename U, typename F> inline U foldl(F f, U init, value lst);
-template <typename U, typename F> inline U foldl(F f, U init, value lst1, value lst2);
-template <typename U, typename F> inline U foldr(F f, U init, value lst);
-template <typename U, typename F> inline U foldr(F f, U init, value lst1, value lst2);
-template <typename F> inline value filter(F f, value lst);
-template <typename F> inline value filter_not(F f, value lst);
-template <typename U, typename F> inline value remove(U x, value lst, F f);
+template <typename F> value map(F f, value lst);
+template <typename F> value map(F f, value lst1, value lst2);
+template <typename F> bool all(F f, value lst);
+template <typename F> bool any(F f, value lst);
+template <typename U, typename F> U foldl(F f, U init, value lst);
+template <typename U, typename F> U foldl(F f, U init, value lst1, value lst2);
+template <typename U, typename F> U foldr(F f, U init, value lst);
+template <typename U, typename F> U foldr(F f, U init, value lst1, value lst2);
+template <typename F> value filter(F f, value lst);
+template <typename F> value filter_not(F f, value lst);
+template <typename U, typename F> value remove(U x, value lst, F f);
 inline value remove(value x, value lst);
 inline value cartesian_product(value lst1, value lst2);
 inline value cartesian_product(value lst1, value lst2, value lst3);
 
 inline value assoc(value v, value lst);
 inline value nth(value lst, size_t idx);
-template <typename F> inline std::optional<size_t> index_of(value lst, value v, F f);
+template <typename F> std::optional<size_t> index_of(value lst, value v, F f);
 inline std::optional<size_t> index_of(value lst, value v);
-template <typename F> inline bool member(value v, value lst, F f);
+template <typename F> bool member(value v, value lst, F f);
 inline bool member(value v, value lst);
 inline value range(size_t end);
 inline value range(double start, double end, double step = 1.0);
-template <typename F> inline value build_list(size_t n, F f);
+template <typename F> value build_list(size_t n, F f);
 
 //
 // Predicates
@@ -520,30 +520,30 @@ inline value make_value(std::same_as<size_t> auto x) noexcept { return make_valu
 inline value make_value(std::same_as<nullptr_t> auto) noexcept { return nil; }
 template <typename T>
     requires(std::constructible_from<std::string_view, T> && !std::is_same_v<T, nullptr_t>)
-inline value make_value(T s) {
+value make_value(T s) {
     std::string_view sv{s};
     return new_string(sv.begin(), sv.length());
 }
-template <has_to_list T> inline value make_value(T x) { return to_list<T>{}(x); }
-template <typename T> inline value make_value(T) {
+template <has_to_list T> value make_value(T x) { return to_list<T>{}(x); }
+template <typename T> value make_value(T) {
     static_assert(!sizeof(T),
                   "'make_value' not implemented for this type. Please use existing overloads to avoid ambiguity.");
 }
 
-template <typename... Args> inline value list(Args &&...args) {
+template <typename... Args> value list(Args &&...args) {
     value first = nil;
     value last = nil;
     (add_last(first, last, make_value(std::forward<Args>(args))), ...);
     return first;
 }
 
-template <has_list_tag T> inline value make_tagged_value(T &&t) {
+template <has_list_tag T> value make_tagged_value(T &&t) {
     std::string_view tag = list_tag<std::remove_cvref_t<T>>::tag;
     value v = make_value(std::forward<T>(t));
     return cons(make_value(tag), v);
 }
 
-template <has_list_tag... Args> inline value tagged_list(Args &&...args) {
+template <has_list_tag... Args> value tagged_list(Args &&...args) {
     value first = nil;
     value last = nil;
     (add_last(first, last, make_tagged_value(std::forward<Args>(args))), ...);
@@ -960,7 +960,7 @@ inline value append(value a, value b, value c) {
     }
     return result;
 }
-template <typename F> inline value map(F f, value lst) {
+template <typename F> value map(F f, value lst) {
     auto new_lst = nil;
     auto new_lst_end = nil;
     for (auto it : lst.iter()) {
@@ -968,7 +968,7 @@ template <typename F> inline value map(F f, value lst) {
     }
     return new_lst;
 }
-template <typename F> inline value map(F f, value lst1, value lst2) {
+template <typename F> value map(F f, value lst1, value lst2) {
     auto new_lst = nil;
     auto new_lst_end = nil;
     for (; is_cons(lst1) && is_cons(lst2); lst1 = cdr(lst1), lst2 = cdr(lst2)) {
@@ -978,7 +978,7 @@ template <typename F> inline value map(F f, value lst1, value lst2) {
     }
     return new_lst;
 }
-template <typename F> inline bool all(F f, value lst) {
+template <typename F> bool all(F f, value lst) {
     for (auto it : lst.iter()) {
         if (!f(it)) {
             return false;
@@ -986,7 +986,7 @@ template <typename F> inline bool all(F f, value lst) {
     }
     return true;
 }
-template <typename F> inline bool any(F f, value lst) {
+template <typename F> bool any(F f, value lst) {
     for (auto it : lst.iter()) {
         if (f(it)) {
             return true;
@@ -995,14 +995,14 @@ template <typename F> inline bool any(F f, value lst) {
     return false;
 }
 
-template <typename U, typename F> inline U foldl(F f, U init, value lst) {
+template <typename U, typename F> U foldl(F f, U init, value lst) {
     U result = init;
     for (auto it : lst.iter()) {
         result = f(it, result);
     }
     return result;
 }
-template <typename U, typename F> inline U foldl(F f, U init, value lst1, value lst2) {
+template <typename U, typename F> U foldl(F f, U init, value lst1, value lst2) {
     U result = init;
     for (; is_cons(lst1) && is_cons(lst2); lst1 = cdr(lst1), lst2 = cdr(lst2)) {
         auto it1 = car(lst1);
@@ -1011,20 +1011,20 @@ template <typename U, typename F> inline U foldl(F f, U init, value lst1, value 
     }
     return result;
 }
-template <typename U, typename F> inline value foldr(F f, U init, value lst) {
+template <typename U, typename F> value foldr(F f, U init, value lst) {
     if (is_nil(lst)) {
         return init;
     }
     return f(car(lst), foldr(f, init, cdr(lst)));
 }
-template <typename U, typename F> inline value foldr(F f, U init, value lst1, value lst2) {
+template <typename U, typename F> value foldr(F f, U init, value lst1, value lst2) {
     if (is_nil(lst1) || is_nil(lst2)) {
         return init;
     }
     return f(car(lst1), car(lst2), foldr(f, init, cdr(lst1), cdr(lst2)));
 }
 
-template <typename F> inline value filter(F f, value lst) {
+template <typename F> value filter(F f, value lst) {
     value new_lst = nil;
     value new_lst_end = nil;
     for (auto it : lst.iter()) {
@@ -1036,11 +1036,11 @@ template <typename F> inline value filter(F f, value lst) {
     return new_lst;
 }
 
-template <typename F> inline value filter_not(F f, value lst) {
+template <typename F> value filter_not(F f, value lst) {
     return filter([&f](auto x) { return !f(x); }, lst);
 }
 
-template <typename U, typename F> inline value remove(U x, value lst, F f) {
+template <typename U, typename F> value remove(U x, value lst, F f) {
     value new_lst = nil;
     value new_lst_end = nil;
     for (auto it : lst.iter()) {
@@ -1088,7 +1088,7 @@ inline value nth(value lst, size_t idx) {
     }
     return car(lst);
 }
-template <typename F> inline std::optional<size_t> index_of(value lst, value v, F f) {
+template <typename F> std::optional<size_t> index_of(value lst, value v, F f) {
     size_t idx = 0;
     for (auto it : lst.iter()) {
         if (f(v, it)) {
@@ -1099,7 +1099,7 @@ template <typename F> inline std::optional<size_t> index_of(value lst, value v, 
     return std::nullopt;
 }
 inline std::optional<size_t> index_of(value lst, value v) { return index_of(lst, v, is_equal); }
-template <typename F> inline bool member(value v, value lst, F f) { return index_of(lst, v, f).has_value(); }
+template <typename F> bool member(value v, value lst, F f) { return index_of(lst, v, f).has_value(); }
 inline bool member(value v, value lst) { return index_of(lst, v).has_value(); }
 
 inline value range(size_t end) {
@@ -1116,7 +1116,7 @@ inline value range(double start, double end, double step) {
     }
     return head;
 }
-template <typename F> inline value build_list(size_t n, F f) {
+template <typename F> value build_list(size_t n, F f) {
     value head = nil, tail = nil;
     for (size_t i = 0; i < n; ++i) {
         add_last(head, tail, make_value(f(i)));
