@@ -28,7 +28,6 @@
 
 #include <assert.h>
 #include <cctype>
-#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -61,15 +60,15 @@ public:
     context_guard &operator=(context_guard &&) = default;
 
     context_guard() : context_guard(1 << 20) {}
-    explicit context_guard(size_t size) : memory_((uint8_t *)malloc(size)), memory_size_(size) {
+    explicit context_guard(size_t size) : memory_(static_cast<char *>(malloc(size))), memory_size_(size) {
         if (memory_ == nullptr)
             throw std::bad_alloc{};
-        set_context(context{(char *)memory_, 0, memory_size_});
+        set_context(context{memory_, 0, memory_size_});
     }
     ~context_guard() { set_context(context{}); }
 
 private:
-    uint8_t *memory_ = nullptr;
+    char *memory_ = nullptr;
     size_t memory_size_ = 0;
 };
 
@@ -192,8 +191,8 @@ inline value &unwrap_car(value x) noexcept;
 inline value &unwrap_cdr(value x) noexcept;
 inline double unwrap_f64(value x) noexcept;
 // Unsafe cons mutators
-inline void unwrap_setcar(value cons, value car) noexcept;
-inline void unwrap_setcdr(value cons, value cdr) noexcept;
+inline void unwrap_setcar(value c, value car) noexcept;
+inline void unwrap_setcdr(value c, value cdr) noexcept;
 
 //
 // Checked data access
@@ -434,10 +433,10 @@ inline value new_string(context *ctx, const char *value, size_t length) {
     assert(length < UINT32_MAX);
 
     void *memory = alloc(ctx, offsetof(obj, as) + offsetof(obj_str, str) + length + 1);
-    obj *header = (obj *)memory;
+    obj *header = static_cast<obj *>(memory);
     header->kind = value_kind::string;
 
-    obj_str *str = (obj_str *)(void *)(header->as);
+    obj_str *str = reinterpret_cast<obj_str *>(header->as);
     size_t actual_length = 0;
     char *write_cursor = str->str;
     const char *end = value + length;
@@ -487,17 +486,17 @@ inline value new_string(context *ctx, const char *value, size_t length) {
 
 inline value new_cons(context *ctx, value car, value cdr) {
     void *memory = alloc(ctx, offsetof(obj, as) + sizeof(obj_cons));
-    obj *header = (obj *)memory;
+    obj *header = static_cast<obj *>(memory);
     header->kind = value_kind::cons;
-    obj_cons *cons = (obj_cons *)(void *)(header->as);
-    cons->car = car;
-    cons->cdr = cdr;
+    obj_cons *c = reinterpret_cast<obj_cons *>(header->as);
+    c->car = car;
+    c->cdr = cdr;
     return nan_box_ptr(header);
 }
 
 } // namespace internal
 
-inline void set_context(context ctx) { internal::g_ctx = ctx; }
+inline void set_context(context ctx) { internal::g_ctx = std::move(ctx); }
 
 //
 // Value constructors
@@ -531,10 +530,10 @@ template <typename T> value make_value(T) {
 }
 
 template <typename... Args> value list(Args &&...args) {
-    value first = nil;
-    value last = nil;
-    (add_last(first, last, make_value(std::forward<Args>(args))), ...);
-    return first;
+    value h = nil;
+    value t = nil;
+    (add_last(h, t, make_value(std::forward<Args>(args))), ...);
+    return h;
 }
 
 template <has_list_tag T> value make_tagged_value(T &&t) {
@@ -544,10 +543,10 @@ template <has_list_tag T> value make_tagged_value(T &&t) {
 }
 
 template <has_list_tag... Args> value tagged_list(Args &&...args) {
-    value first = nil;
-    value last = nil;
-    (add_last(first, last, make_tagged_value(std::forward<Args>(args))), ...);
-    return first;
+    value h = nil;
+    value t = nil;
+    (add_last(h, t, make_tagged_value(std::forward<Args>(args))), ...);
+    return h;
 }
 
 constexpr value::value() { this->u64_ = nil.u64_; }
@@ -608,7 +607,7 @@ public:
     deserializing_value_iter &operator=(const deserializing_value_iter &) noexcept = default;
     deserializing_value_iter &operator=(deserializing_value_iter &&) noexcept = default;
 
-    explicit deserializing_value_iter(value x) noexcept : current_(x) { update_current_value(); }
+    explicit deserializing_value_iter(value x) : current_(x) { update_current_value(); }
 
     reference operator*() noexcept { return current_value_; }
     bool operator==(deserializing_value_iter other) noexcept {
@@ -680,7 +679,7 @@ public:
     explicit deserializing_tagged_value_iter(value x) : current_(x) { update_current_value(); }
 
     reference operator*() noexcept { return current_element_; }
-    bool operator==(deserializing_tagged_value_iter other) const noexcept {
+    bool operator==(const deserializing_tagged_value_iter &other) const noexcept {
         return current_.internal() == other.current_.internal();
     }
 
@@ -821,8 +820,8 @@ inline double unwrap_f64(value x) noexcept {
     memcpy(&result, &x, sizeof(value));
     return result;
 }
-inline void unwrap_setcar(value cons, value car) noexcept { internal::unwrap_cons(cons)->car = car; }
-inline void unwrap_setcdr(value cons, value cdr) noexcept { internal::unwrap_cons(cons)->cdr = cdr; }
+inline void unwrap_setcar(value c, value car) noexcept { internal::unwrap_cons(c)->car = car; }
+inline void unwrap_setcdr(value c, value cdr) noexcept { internal::unwrap_cons(c)->cdr = cdr; }
 
 //
 // Checked data access
@@ -1053,24 +1052,24 @@ template <typename U, typename F> value remove(U x, value lst, F f) {
 inline value remove(value x, value lst) { return remove(x, lst, is_equal); }
 
 inline value cartesian_product(value lst1, value lst2) {
-    value head = nil, tail = nil;
+    value h = nil, t = nil;
     for (auto it1 : lst1.iter()) {
         for (auto it2 : lst2.iter()) {
-            add_last(head, tail, list(it1, it2));
+            add_last(h, t, list(it1, it2));
         }
     }
-    return head;
+    return h;
 }
 inline value cartesian_product(value lst1, value lst2, value lst3) {
-    value head = nil, tail = nil;
+    value h = nil, t = nil;
     for (auto it1 : lst1.iter()) {
         for (auto it2 : lst2.iter()) {
             for (auto it3 : lst3.iter()) {
-                add_last(head, tail, list(it1, it2, it3));
+                add_last(h, t, list(it1, it2, it3));
             }
         }
     }
-    return head;
+    return h;
 }
 
 inline value assoc(value v, value lst) {
@@ -1103,25 +1102,25 @@ template <typename F> bool member(value v, value lst, F f) { return index_of(lst
 inline bool member(value v, value lst) { return index_of(lst, v).has_value(); }
 
 inline value range(size_t end) {
-    value head = nil, tail = nil;
+    value h = nil, t = nil;
     for (size_t i = 0; i < end; ++i) {
-        add_last(head, tail, make_value(i));
+        add_last(h, t, make_value(i));
     }
-    return head;
+    return h;
 }
 inline value range(double start, double end, double step) {
-    value head = nil, tail = nil;
+    value h = nil, t = nil;
     for (double it = start; it < end; it += step) {
-        add_last(head, tail, make_value(it));
+        add_last(h, t, make_value(it));
     }
-    return head;
+    return h;
 }
 template <typename F> value build_list(size_t n, F f) {
-    value head = nil, tail = nil;
+    value h = nil, t = nil;
     for (size_t i = 0; i < n; ++i) {
-        add_last(head, tail, make_value(f(i)));
+        add_last(h, t, make_value(f(i)));
     }
-    return head;
+    return h;
 }
 
 //
@@ -1175,8 +1174,8 @@ inline bool is_equal(value left, value right) noexcept {
     case value_kind::cons:
         return is_equal(unwrap_car(left), unwrap_car(right)) && is_equal(unwrap_cdr(left), unwrap_cdr(right));
     case value_kind::string: {
-        internal::obj_str *left_str = internal::unwrap_string(left);
-        internal::obj_str *right_str = internal::unwrap_string(right);
+        const internal::obj_str *left_str = internal::unwrap_string(left);
+        const internal::obj_str *right_str = internal::unwrap_string(right);
         return left_str->length == right_str->length && left_str->hash == right_str->hash &&
                memcmp(left_str->str, right_str->str, left_str->length) == 0;
     }
@@ -1393,11 +1392,11 @@ struct lexer {
                     break;
                 }
             }
-            size_t length = cursor - token_start;
-            if (length == 1 && *token_start == '.') {
+            size_t len = cursor - token_start;
+            if (len == 1 && *token_start == '.') {
                 next.kind = token_kind::dot;
                 return;
-            } else if (length == 1 && *token_start == 't') {
+            } else if (len == 1 && *token_start == 't') {
                 next.kind = token_kind::tru;
                 return;
             }
@@ -1429,7 +1428,7 @@ struct reader {
     const token &tok;
     bool should_return_old_token = false;
 
-    reader(lexer &lex) noexcept : lex(lex), tok(lex.next) {}
+    explicit reader(lexer &lex) noexcept : lex(lex), tok(lex.next) {}
 
     void peek_token() {
         if (should_return_old_token) {
@@ -1537,16 +1536,16 @@ inline std::string print(value x) {
         while (is_cons(x)) {
             result += print(unwrap_car(x));
 
-            value cdr = unwrap_cdr(x);
-            if (!is_list(cdr)) {
+            value next = unwrap_cdr(x);
+            if (!is_list(next)) {
                 result += " . ";
-                result += print(cdr);
+                result += print(next);
                 break;
             }
-            if (!is_nil(cdr)) {
+            if (!is_nil(next)) {
                 result += " ";
             }
-            x = cdr;
+            x = next;
         }
         return result + ")";
     }
