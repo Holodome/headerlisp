@@ -294,6 +294,7 @@ inline value cartesian_product(value lst1, value lst2, value lst3);
 
 inline value assoc(value v, value lst);
 inline value nth(value lst, size_t idx);
+inline value nthcdr(value lst, size_t idx);
 template <typename F> std::optional<size_t> index_of(value lst, value v, F f);
 inline std::optional<size_t> index_of(value lst, value v);
 template <typename F> bool member(value v, value lst, F f);
@@ -1010,13 +1011,13 @@ template <typename U, typename F> U foldl(F f, U init, value lst1, value lst2) {
     }
     return result;
 }
-template <typename U, typename F> value foldr(F f, U init, value lst) {
+template <typename U, typename F> U foldr(F f, U init, value lst) {
     if (is_nil(lst)) {
         return init;
     }
     return f(car(lst), foldr(f, init, cdr(lst)));
 }
-template <typename U, typename F> value foldr(F f, U init, value lst1, value lst2) {
+template <typename U, typename F> U foldr(F f, U init, value lst1, value lst2) {
     if (is_nil(lst1) || is_nil(lst2)) {
         return init;
     }
@@ -1081,11 +1082,12 @@ inline value assoc(value v, value lst) {
     return nil;
 }
 
-inline value nth(value lst, size_t idx) {
+inline value nth(value lst, size_t idx) { return car(nthcdr(lst, idx)); }
+inline value nthcdr(value lst, size_t idx) {
     while (idx--) {
         lst = cdr(lst);
     }
-    return car(lst);
+    return lst;
 }
 template <typename F> std::optional<size_t> index_of(value lst, value v, F f) {
     size_t idx = 0;
