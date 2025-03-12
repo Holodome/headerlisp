@@ -339,8 +339,7 @@ inline value operator/(value left, double right);
 //
 
 inline value read(const char *s, size_t length, const char **end = nullptr);
-inline value read(std::string_view s);
-inline value read(std::string_view s, const char **end);
+inline value read(std::string_view s, const char **end = nullptr);
 inline std::string print(value x);
 
 namespace internal {
@@ -996,14 +995,14 @@ template <typename F> bool any(F f, value lst) {
 }
 
 template <typename U, typename F> U foldl(F f, U init, value lst) {
-    U result = init;
+    U result{std::move(init)};
     for (auto it : lst.iter()) {
         result = f(it, result);
     }
     return result;
 }
 template <typename U, typename F> U foldl(F f, U init, value lst1, value lst2) {
-    U result = init;
+    U result{std::move(init)};
     for (; is_cons(lst1) && is_cons(lst2); lst1 = cdr(lst1), lst2 = cdr(lst2)) {
         auto it1 = car(lst1);
         auto it2 = car(lst2);
@@ -1015,7 +1014,8 @@ template <typename U, typename F> U foldr(F f, U init, value lst) {
     if (is_nil(lst)) {
         return init;
     }
-    return f(car(lst), foldr(f, init, cdr(lst)));
+    auto [a, b] = unapply_cons(lst);
+    return f(a, foldr(f, init, b));
 }
 template <typename U, typename F> U foldr(F f, U init, value lst1, value lst2) {
     if (is_nil(lst1) || is_nil(lst2)) {
@@ -1029,7 +1029,6 @@ template <typename F> value filter(F f, value lst) {
     value new_lst_end = nil;
     for (auto it : lst.iter()) {
         if (f(it)) {
-
             add_last(new_lst, new_lst_end, it);
         }
     }
@@ -1084,6 +1083,23 @@ inline value assoc(value v, value lst) {
 
 inline value nth(value lst, size_t idx) { return car(nthcdr(lst, idx)); }
 inline value nthcdr(value lst, size_t idx) {
+#ifdef __GNUC__
+    if (__builtin_constant_p(idx)) {
+        switch (idx) {
+        case 0: return lst;
+        case 1: return cdr(lst);
+        case 2: return cddr(lst);
+        case 3: return cdddr(lst);
+        case 4: return cddddr(lst);
+        case 5: return cdr(cddddr(lst));
+        case 6: return cddr(cddddr(lst));
+        case 7: return cdddr(cddddr(lst));
+        case 8: return cddddr(cddddr(lst));
+        case 9: return cdr(cddddr(cddddr(lst)));
+        case 10: return cddr(cddddr(cddddr(lst)));
+        }
+    }
+#endif
     while (idx--) {
         lst = cdr(lst);
     }
@@ -1290,7 +1306,8 @@ enum class token_kind {
     tru,
     lparen,
     rparen,
-    unexpected
+    unexpected,
+    comma
 };
 
 struct token {
@@ -1300,15 +1317,18 @@ struct token {
     double f64;
 };
 
-inline bool is_symbol_breaker(int c) noexcept {
-    return isspace(c) || c == ';' || c == '(' || c == ')' || !isprint(c) || c == '"';
-}
-
 struct lexer {
     const char *input;
     const char *end;
     const char *cursor;
-    token next;
+    bool comma_symbol = false;
+    token next{};
+
+    bool is_symbol_breaker(int c) noexcept {
+        if (comma_symbol && c == ',')
+            return true;
+        return isspace(c) || c == ';' || c == '(' || c == ')' || !isprint(c) || c == '"';
+    }
 
     void advance() {
         const char *token_start = cursor;
@@ -1329,6 +1349,11 @@ struct lexer {
                     token_start = cursor;
                     next.offset = token_start - input;
                     continue;
+                }
+
+                if (comma_symbol && c == ',') {
+                    next.kind = token_kind::comma;
+                    return;
                 }
 
                 // Parens
@@ -1425,12 +1450,120 @@ struct lexer {
     }
 };
 
-struct reader {
+struct function_reader {
     lexer &lex;
     const token &tok;
     bool should_return_old_token = false;
 
-    explicit reader(lexer &lex) noexcept : lex(lex), tok(lex.next) {}
+    explicit function_reader(lexer &lex) noexcept : lex(lex), tok(lex.next) {}
+
+    void peek_token() {
+        if (should_return_old_token) {
+            return;
+        }
+        for (;;) {
+            lex.advance();
+            if (tok.kind == token_kind::unexpected) {
+                throw hl_exception("unexpected token");
+            }
+            break;
+        }
+        should_return_old_token = true;
+    }
+
+    void eat_token() noexcept { should_return_old_token = false; }
+
+    value read_list() {
+        peek_token();
+        // This should be guaranteed by caller.
+        assert(tok.kind == token_kind::lparen);
+        eat_token();
+
+        peek_token();
+        // Handle nil
+        if (tok.kind == token_kind::rparen) {
+            eat_token();
+            return nil;
+        }
+
+        value list_head, list_tail;
+        list_head = list_tail = cons(read_expr(), nil);
+        // Now enter the loop of parsing other list elements.
+        for (;;) {
+            peek_token();
+            if (tok.kind == token_kind::end) {
+                throw hl_exception("Missing closing paren when reading list (eof encountered)");
+            }
+            if (tok.kind == token_kind::rparen) {
+                eat_token();
+                return list_head;
+            }
+            if (tok.kind == token_kind::dot) {
+                eat_token();
+                unwrap_setcdr(list_tail, read_expr());
+                peek_token();
+                if (tok.kind != token_kind::rparen) {
+                    throw hl_exception("Missing closing paren after dot when reading list");
+                }
+                eat_token();
+                return list_head;
+            }
+            if (tok.kind == token_kind::comma) {
+                eat_token();
+                continue;
+            }
+
+            value ast = read_expr();
+            value tail = cons(ast, nil);
+            unwrap_setcdr(list_tail, tail);
+            list_tail = tail;
+        }
+    }
+
+    value read_expr() {
+        peek_token();
+        switch (tok.kind) {
+        case token_kind::end: break;
+        case token_kind::num: eat_token(); return make_value(tok.f64);
+        case token_kind::tru: eat_token(); return tru;
+        case token_kind::symb: return read_symbol();
+        case token_kind::string:
+            eat_token();
+            assert(lex.input[tok.offset] == '"');
+            assert(lex.input[tok.offset + tok.length - 1] == '"');
+            assert(tok.length >= 2);
+            return new_string(&g_ctx, lex.input + tok.offset + 1, tok.length - 2);
+        case token_kind::lparen: return read_list();
+        case token_kind::dot: throw hl_exception("unexpected .");
+        case token_kind::rparen: throw hl_exception("stray )");
+        case token_kind::comma: throw hl_exception("stary ,");
+        case token_kind::unexpected: break;
+        }
+        __builtin_unreachable();
+    }
+
+    value read_symbol() {
+        peek_token();
+        if (tok.kind != token_kind::symb)
+            throw hl_exception("function name token should be a symbol");
+
+        eat_token();
+        value sy = new_string(&g_ctx, lex.input + tok.offset, tok.length);
+        peek_token();
+        if (tok.kind == token_kind::lparen) {
+            value lst = read_list();
+            return cons(sy, lst);
+        }
+        return sy;
+    }
+};
+
+struct sexpr_reader {
+    lexer &lex;
+    const token &tok;
+    bool should_return_old_token = false;
+
+    explicit sexpr_reader(lexer &lex) noexcept : lex(lex), tok(lex.next) {}
 
     void peek_token() {
         if (should_return_old_token) {
@@ -1507,6 +1640,7 @@ struct reader {
         case token_kind::lparen: return read_list(); break;
         case token_kind::dot: throw hl_exception("unexpected ."); break;
         case token_kind::rparen: throw hl_exception("stray )"); break;
+        case token_kind::comma: throw hl_exception("unexpected ,"); break;
         case token_kind::unexpected: break;
         }
         __builtin_unreachable();
@@ -1516,8 +1650,8 @@ struct reader {
 } // namespace internal::reader
 
 inline value read(const char *s, size_t length, const char **end) {
-    internal::reader::lexer lexer{s, s + length, s, {}};
-    internal::reader::reader reader{lexer};
+    internal::reader::lexer lexer{s, s + length, s};
+    internal::reader::sexpr_reader reader{lexer};
 
     value result = reader.read_expr();
     if (end) {
@@ -1525,8 +1659,21 @@ inline value read(const char *s, size_t length, const char **end) {
     }
     return result;
 }
-inline value read(std::string_view s) { return read(s.data(), s.length()); }
 inline value read(std::string_view s, const char **end) { return read(s.data(), s.length(), end); }
+
+inline value read_function(const char *s, size_t length, const char **end) {
+    internal::reader::lexer lexer{s, s + length, s, true};
+    internal::reader::function_reader reader{lexer};
+
+    value result = reader.read_symbol();
+    if (end) {
+        *end = reader.lex.cursor;
+    }
+    return result;
+}
+inline value read_function(std::string_view s, const char **end = nullptr) {
+    return read_function(s.data(), s.length(), end);
+}
 
 inline std::string print(value x) {
     switch (get_value_kind(x)) {
