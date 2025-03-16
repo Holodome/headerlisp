@@ -1450,12 +1450,12 @@ struct lexer {
     }
 };
 
-struct function_reader {
+template <typename T> struct base_reader {
     lexer &lex;
     const token &tok;
     bool should_return_old_token = false;
 
-    explicit function_reader(lexer &lex) noexcept : lex(lex), tok(lex.next) {}
+    explicit base_reader(lexer &lex) noexcept : lex(lex), tok(lex.next) {}
 
     void peek_token() {
         if (should_return_old_token) {
@@ -1487,7 +1487,7 @@ struct function_reader {
         }
 
         value list_head, list_tail;
-        list_head = list_tail = cons(read_expr(), nil);
+        list_head = list_tail = cons(((T *)this)->read_expr(), nil);
         // Now enter the loop of parsing other list elements.
         for (;;) {
             peek_token();
@@ -1500,7 +1500,7 @@ struct function_reader {
             }
             if (tok.kind == token_kind::dot) {
                 eat_token();
-                unwrap_setcdr(list_tail, read_expr());
+                unwrap_setcdr(list_tail, ((T *)this)->read_expr());
                 peek_token();
                 if (tok.kind != token_kind::rparen) {
                     throw hl_exception("Missing closing paren after dot when reading list");
@@ -1513,12 +1513,17 @@ struct function_reader {
                 continue;
             }
 
-            value ast = read_expr();
+            value ast = ((T *)this)->read_expr();
             value tail = cons(ast, nil);
             unwrap_setcdr(list_tail, tail);
             list_tail = tail;
         }
     }
+};
+
+struct function_reader : base_reader<function_reader> {
+
+    using base_reader<function_reader>::base_reader;
 
     value read_expr() {
         peek_token();
@@ -1556,73 +1561,13 @@ struct function_reader {
         }
         return sy;
     }
+
+    value read() { return read_symbol(); }
 };
 
-struct sexpr_reader {
-    lexer &lex;
-    const token &tok;
-    bool should_return_old_token = false;
+struct sexpr_reader : base_reader<sexpr_reader> {
 
-    explicit sexpr_reader(lexer &lex) noexcept : lex(lex), tok(lex.next) {}
-
-    void peek_token() {
-        if (should_return_old_token) {
-            return;
-        }
-        for (;;) {
-            lex.advance();
-            if (tok.kind == token_kind::unexpected) {
-                throw hl_exception("unexpected token");
-            }
-            break;
-        }
-        should_return_old_token = true;
-    }
-
-    void eat_token() noexcept { should_return_old_token = false; }
-
-    value read_list() {
-        peek_token();
-        // This should be guaranteed by caller.
-        assert(tok.kind == token_kind::lparen);
-        eat_token();
-
-        peek_token();
-        // Handle nil
-        if (tok.kind == token_kind::rparen) {
-            eat_token();
-            return nil;
-        }
-
-        value list_head, list_tail;
-        list_head = list_tail = cons(read_expr(), nil);
-        // Now enter the loop of parsing other list elements.
-        for (;;) {
-            peek_token();
-            if (tok.kind == token_kind::end) {
-                throw hl_exception("Missing closing paren when reading list (eof encountered)");
-            }
-            if (tok.kind == token_kind::rparen) {
-                eat_token();
-                return list_head;
-            }
-            if (tok.kind == token_kind::dot) {
-                eat_token();
-                unwrap_setcdr(list_tail, read_expr());
-                peek_token();
-                if (tok.kind != token_kind::rparen) {
-                    throw hl_exception("Missing closing paren after dot when reading list");
-                }
-                eat_token();
-                return list_head;
-            }
-
-            value ast = read_expr();
-            value tail = cons(ast, nil);
-            unwrap_setcdr(list_tail, tail);
-            list_tail = tail;
-        }
-    }
+    using base_reader<sexpr_reader>::base_reader;
 
     value read_expr() {
         peek_token();
@@ -1645,6 +1590,8 @@ struct sexpr_reader {
         }
         __builtin_unreachable();
     }
+
+    value read() { return read_expr(); }
 };
 
 } // namespace internal::reader
@@ -1653,7 +1600,7 @@ inline value read(const char *s, size_t length, const char **end) {
     internal::reader::lexer lexer{s, s + length, s};
     internal::reader::sexpr_reader reader{lexer};
 
-    value result = reader.read_expr();
+    value result = reader.read();
     if (end) {
         *end = reader.lex.cursor;
     }
@@ -1665,7 +1612,7 @@ inline value read_function(const char *s, size_t length, const char **end) {
     internal::reader::lexer lexer{s, s + length, s, true};
     internal::reader::function_reader reader{lexer};
 
-    value result = reader.read_symbol();
+    value result = reader.read();
     if (end) {
         *end = reader.lex.cursor;
     }

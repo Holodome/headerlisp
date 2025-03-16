@@ -21,6 +21,7 @@ There are three main use cases for headerlisp:
 ## Examples
 
 1. [interp.cpp](examples/interp.cpp) - headerlisp used to implement parser for expression interpreter
+1. [interp_func.cpp](examples/interp_func.cpp) - interp.cpp using function-call syntax instead of s-expressions
 2. [processing.cpp](examples/processing.cpp) - showcase of list processing functions (`map`, `filter`, iteration etc.)
 3. [serialize.cpp](examples/serialize.cpp) - using headerlisp as serialization tool and format
 4. [wire.cpp](examples/wire.cpp) - using headerlisp as a format for passing commands between threads
