@@ -28,6 +28,7 @@
 
 #include <assert.h>
 #include <cctype>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -160,6 +161,21 @@ template <> struct list_tag<int> {
     constexpr static inline std::string_view tag = "num";
 };
 
+template <typename F, typename U>
+concept fold_function = std::is_invocable_r<U, F, value, U>::value;
+
+template <typename F, typename U>
+concept fold2_function = std::is_invocable_r<U, F, value, value, U>::value;
+
+template <typename F>
+concept map_function = std::is_invocable_r<value, F, value>::value;
+
+template <typename F>
+concept map2_function = std::is_invocable_r<value, F, value, value>::value;
+
+template <typename F>
+concept predicate_function = std::is_invocable_r<bool, F, value>::value;
+
 //
 // Value constructors
 //
@@ -283,17 +299,17 @@ inline value reverse(value lst);
 
 inline value append(value a, value b);
 inline value append(value a, value b, value c);
-template <typename F> value map(F f, value lst);
-template <typename F> value map(F f, value lst1, value lst2);
-template <typename F> bool all(F f, value lst);
-template <typename F> bool any(F f, value lst);
-template <typename U, typename F> U foldl(F f, U init, value lst);
-template <typename U, typename F> U foldl(F f, U init, value lst1, value lst2);
-template <typename U, typename F> U foldr(F f, U init, value lst);
-template <typename U, typename F> U foldr(F f, U init, value lst1, value lst2);
-template <typename F> value filter(F f, value lst);
-template <typename F> value filter_not(F f, value lst);
-template <typename U, typename F> value remove(U x, value lst, F f);
+value map(map_function auto f, value lst);
+value map(map2_function auto f, value lst1, value lst2);
+bool all(predicate_function auto f, value lst);
+bool any(predicate_function auto f, value lst);
+template <typename U> U foldl(fold_function<U> auto f, U init, value lst);
+template <typename U> U foldl(fold2_function<U> auto f, U init, value lst1, value lst2);
+template <typename U> U foldr(fold_function<U> auto f, U init, value lst);
+template <typename U> U foldr(fold2_function<U> auto f, U init, value lst1, value lst2);
+value filter(predicate_function auto f, value lst);
+value filter_not(predicate_function auto f, value lst);
+value remove(value lst, predicate_function auto f);
 inline value remove(value x, value lst);
 inline value cartesian_product(value lst1, value lst2);
 inline value cartesian_product(value lst1, value lst2, value lst3);
@@ -301,13 +317,15 @@ inline value cartesian_product(value lst1, value lst2, value lst3);
 inline value assoc(value v, value lst);
 inline value nth(value lst, size_t idx);
 inline value nthcdr(value lst, size_t idx);
-template <typename F> std::optional<size_t> index_of(value lst, value v, F f);
+std::optional<size_t> index_of(value lst, predicate_function auto f);
 inline std::optional<size_t> index_of(value lst, value v);
-template <typename F> bool member(value v, value lst, F f);
+bool member(value v, value lst, predicate_function auto f);
 inline bool member(value v, value lst);
 inline value range(size_t end);
 inline value range(double start, double end, double step = 1.0);
-template <typename F> value build_list(size_t n, F f);
+template <typename F>
+    requires std::is_invocable_r<value, F, size_t>::value
+value build_list(size_t n, F f);
 
 //
 // Predicates
@@ -965,7 +983,7 @@ inline value append(value a, value b, value c) {
     }
     return result;
 }
-template <typename F> value map(F f, value lst) {
+value map(map_function auto f, value lst) {
     auto new_lst = nil;
     auto new_lst_end = nil;
     for (auto it : lst.iter()) {
@@ -973,7 +991,7 @@ template <typename F> value map(F f, value lst) {
     }
     return new_lst;
 }
-template <typename F> value map(F f, value lst1, value lst2) {
+value map(map2_function auto f, value lst1, value lst2) {
     auto new_lst = nil;
     auto new_lst_end = nil;
     for (; is_cons(lst1) && is_cons(lst2); lst1 = cdr(lst1), lst2 = cdr(lst2)) {
@@ -983,7 +1001,7 @@ template <typename F> value map(F f, value lst1, value lst2) {
     }
     return new_lst;
 }
-template <typename F> bool all(F f, value lst) {
+bool all(predicate_function auto f, value lst) {
     for (auto it : lst.iter()) {
         if (!f(it)) {
             return false;
@@ -991,7 +1009,7 @@ template <typename F> bool all(F f, value lst) {
     }
     return true;
 }
-template <typename F> bool any(F f, value lst) {
+bool any(predicate_function auto f, value lst) {
     for (auto it : lst.iter()) {
         if (f(it)) {
             return true;
@@ -1000,14 +1018,14 @@ template <typename F> bool any(F f, value lst) {
     return false;
 }
 
-template <typename U, typename F> U foldl(F f, U init, value lst) {
+template <typename U> U foldl(fold_function<U> auto f, U init, value lst) {
     U result{std::move(init)};
     for (auto it : lst.iter()) {
         result = f(it, result);
     }
     return result;
 }
-template <typename U, typename F> U foldl(F f, U init, value lst1, value lst2) {
+template <typename U> U foldl(fold2_function<U> auto f, U init, value lst1, value lst2) {
     U result{std::move(init)};
     for (; is_cons(lst1) && is_cons(lst2); lst1 = cdr(lst1), lst2 = cdr(lst2)) {
         auto it1 = car(lst1);
@@ -1016,21 +1034,21 @@ template <typename U, typename F> U foldl(F f, U init, value lst1, value lst2) {
     }
     return result;
 }
-template <typename U, typename F> U foldr(F f, U init, value lst) {
+template <typename U> U foldr(fold_function<U> auto f, U init, value lst) {
     if (is_nil(lst)) {
         return init;
     }
     auto [a, b] = unapply_cons(lst);
     return f(a, foldr(f, init, b));
 }
-template <typename U, typename F> U foldr(F f, U init, value lst1, value lst2) {
+template <typename U> U foldr(fold2_function<U> auto f, U init, value lst1, value lst2) {
     if (is_nil(lst1) || is_nil(lst2)) {
         return init;
     }
     return f(car(lst1), car(lst2), foldr(f, init, cdr(lst1), cdr(lst2)));
 }
 
-template <typename F> value filter(F f, value lst) {
+value filter(predicate_function auto f, value lst) {
     value new_lst = nil;
     value new_lst_end = nil;
     for (auto it : lst.iter()) {
@@ -1041,21 +1059,24 @@ template <typename F> value filter(F f, value lst) {
     return new_lst;
 }
 
-template <typename F> value filter_not(F f, value lst) {
+value filter_not(predicate_function auto f, value lst) {
     return filter([&f](auto x) { return !f(x); }, lst);
 }
 
-template <typename U, typename F> value remove(U x, value lst, F f) {
+value remove(value lst, predicate_function auto f) {
     value new_lst = nil;
     value new_lst_end = nil;
     for (auto it : lst.iter()) {
-        if (!f(x, it)) {
+        if (!f(it)) {
             add_last(new_lst, new_lst_end, it);
         }
     }
     return new_lst;
 }
-inline value remove(value x, value lst) { return remove(x, lst, is_equal); }
+
+inline value remove(value x, value lst) {
+    return remove(lst, [x](auto it) { return it == x; });
+}
 
 inline value cartesian_product(value lst1, value lst2) {
     value h = nil, t = nil;
@@ -1111,17 +1132,19 @@ inline value nthcdr(value lst, size_t idx) {
     }
     return lst;
 }
-template <typename F> std::optional<size_t> index_of(value lst, value v, F f) {
+std::optional<size_t> index_of(value lst, predicate_function auto f) {
     size_t idx = 0;
     for (auto it : lst.iter()) {
-        if (f(v, it)) {
+        if (f(it)) {
             return idx;
         }
         ++idx;
     }
     return std::nullopt;
 }
-inline std::optional<size_t> index_of(value lst, value v) { return index_of(lst, v, is_equal); }
+inline std::optional<size_t> index_of(value lst, value x) {
+    return index_of(lst, [x](auto it) { return it == x; });
+}
 template <typename F> bool member(value v, value lst, F f) { return index_of(lst, v, f).has_value(); }
 inline bool member(value v, value lst) { return index_of(lst, v).has_value(); }
 
@@ -1139,7 +1162,9 @@ inline value range(double start, double end, double step) {
     }
     return h;
 }
-template <typename F> value build_list(size_t n, F f) {
+template <typename F>
+    requires std::is_invocable_r<value, F, size_t>::value
+value build_list(size_t n, F f) {
     value h = nil, t = nil;
     for (size_t i = 0; i < n; ++i) {
         add_last(h, t, make_value(f(i)));

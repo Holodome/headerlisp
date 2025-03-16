@@ -12,7 +12,7 @@ int main() {
 
     // map
     value lst = list(1, 2, 3);
-    lst = map([](auto x) { return x * 2; }, lst);
+    lst = map([](value x) { return x * 2; }, lst);
     printf("%s\n", print(lst).c_str()); // (2 4 6)
 
     // filter
