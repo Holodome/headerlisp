@@ -76,7 +76,6 @@ private:
 // Base types
 //
 
-class value;
 class value_range;
 
 enum class value_kind : uint8_t {
@@ -88,6 +87,9 @@ enum class value_kind : uint8_t {
     cons = 0x3,
     string = 0x4,
 };
+
+// Disallow calling functions without namespace due to namespace lookup rules
+namespace value_ns {
 
 class value {
     struct constructor_tag {};
@@ -109,6 +111,10 @@ private:
 
     uint64_t u64_;
 };
+
+} // namespace value_ns
+
+using value = value_ns::value;
 
 class hl_exception : public std::exception {
 public:
