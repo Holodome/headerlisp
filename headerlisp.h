@@ -28,13 +28,13 @@
 
 #include <assert.h>
 #include <cctype>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <format>
 #include <iterator>
 #include <new>
+#include <optional>
 #include <stddef.h>
 #include <stdint.h>
 #include <string_view>
@@ -162,19 +162,19 @@ template <> struct list_tag<int> {
 };
 
 template <typename F, typename U>
-concept fold_function = std::is_invocable_r<U, F, value, U>::value;
+concept fold_function = std::is_invocable_r_v<U, F, value, U>;
 
 template <typename F, typename U>
-concept fold2_function = std::is_invocable_r<U, F, value, value, U>::value;
+concept fold2_function = std::is_invocable_r_v<U, F, value, value, U>;
 
 template <typename F>
-concept map_function = std::is_invocable_r<value, F, value>::value;
+concept map_function = std::is_invocable_r_v<value, F, value>;
 
 template <typename F>
-concept map2_function = std::is_invocable_r<value, F, value, value>::value;
+concept map2_function = std::is_invocable_r_v<value, F, value, value>;
 
 template <typename F>
-concept predicate_function = std::is_invocable_r<bool, F, value>::value;
+concept predicate_function = std::is_invocable_r_v<bool, F, value>;
 
 //
 // Value constructors
@@ -277,6 +277,9 @@ inline value eighth(value x);
 inline value ninth(value x);
 inline value tenth(value x);
 
+inline value nth(value lst, size_t idx);
+inline value nthcdr(value lst, size_t idx);
+
 struct list_bind_2 {
     value a, b;
 };
@@ -290,6 +293,56 @@ struct list_bind_4 {
 inline list_bind_2 first_2(value x);
 inline list_bind_3 first_3(value x);
 inline list_bind_4 first_4(value x);
+
+//
+// Optional list accessors
+//
+inline std::optional<value> car_opt(value x);
+inline std::optional<value> cdr_opt(value x);
+inline std::optional<value> caar_opt(value x);
+inline std::optional<value> cadr_opt(value x);
+inline std::optional<value> cdar_opt(value x);
+inline std::optional<value> cddr_opt(value x);
+inline std::optional<value> caaar_opt(value x);
+inline std::optional<value> caadr_opt(value x);
+inline std::optional<value> cadar_opt(value x);
+inline std::optional<value> caddr_opt(value x);
+inline std::optional<value> cdaar_opt(value x);
+inline std::optional<value> cdadr_opt(value x);
+inline std::optional<value> cddar_opt(value x);
+inline std::optional<value> cdddr_opt(value x);
+inline std::optional<value> caaaar_opt(value x);
+inline std::optional<value> caaadr_opt(value x);
+inline std::optional<value> caadar_opt(value x);
+inline std::optional<value> caaddr_opt(value x);
+inline std::optional<value> cadaar_opt(value x);
+inline std::optional<value> cadadr_opt(value x);
+inline std::optional<value> caddar_opt(value x);
+inline std::optional<value> cadddr_opt(value x);
+inline std::optional<value> cdaaar_opt(value x);
+inline std::optional<value> cdaadr_opt(value x);
+inline std::optional<value> cdadar_opt(value x);
+inline std::optional<value> cdaddr_opt(value x);
+inline std::optional<value> cddaar_opt(value x);
+inline std::optional<value> cddadr_opt(value x);
+inline std::optional<value> cdddar_opt(value x);
+inline std::optional<value> cddddr_opt(value x);
+
+inline std::optional<value> head_opt(value x);
+inline std::optional<value> rest_opt(value x);
+inline std::optional<value> first_opt(value x);
+inline std::optional<value> second_opt(value x);
+inline std::optional<value> third_opt(value x);
+inline std::optional<value> fourth_opt(value x);
+inline std::optional<value> fifth_opt(value x);
+inline std::optional<value> sixth_opt(value x);
+inline std::optional<value> seventh_opt(value x);
+inline std::optional<value> eighth_opt(value x);
+inline std::optional<value> ninth_opt(value x);
+inline std::optional<value> tenth_opt(value x);
+
+inline std::optional<value> nth_opt(value lst, size_t idx);
+inline std::optional<value> nthcdr_opt(value lst, size_t idx);
 
 //
 // Library list manipulation
@@ -315,8 +368,6 @@ inline value cartesian_product(value lst1, value lst2);
 inline value cartesian_product(value lst1, value lst2, value lst3);
 
 inline value assoc(value v, value lst);
-inline value nth(value lst, size_t idx);
-inline value nthcdr(value lst, size_t idx);
 std::optional<size_t> index_of(value lst, predicate_function auto f);
 inline std::optional<size_t> index_of(value lst, value v);
 bool member(value v, value lst, predicate_function auto f);
@@ -324,7 +375,7 @@ inline bool member(value v, value lst);
 inline value range(size_t end);
 inline value range(double start, double end, double step = 1.0);
 template <typename F>
-    requires std::is_invocable_r<value, F, size_t>::value
+    requires std::is_invocable_r_v<value, F, size_t>
 value build_list(size_t n, F f);
 
 //
@@ -367,6 +418,15 @@ inline value read(std::string_view s, const char **end = nullptr);
 inline std::string print(value x);
 
 namespace internal {
+
+template <typename U, typename T, typename F>
+    requires std::is_invocable_r_v<std::optional<U>, F, T>
+std::optional<U> flat_map(std::optional<T> x, F f) {
+    if (x.has_value()) {
+        return f(*x);
+    }
+    return x;
+}
 
 inline thread_local context g_ctx{nullptr, 0, 0};
 
@@ -933,9 +993,109 @@ inline value eighth(value x) { return cadddr(cddddr(x)); }
 inline value ninth(value x) { return car(cdddr(cddddr(x))); }
 inline value tenth(value x) { return cadr(cdddr(cddddr(x))); }
 
+inline value nth(value lst, size_t idx) { return car(nthcdr(lst, idx)); }
+inline value nthcdr(value lst, size_t idx) {
+#ifdef __GNUC__
+    if (__builtin_constant_p(idx) && idx <= 10) {
+        switch (idx) {
+        case 0: return lst;
+        case 1: return cdr(lst);
+        case 2: return cddr(lst);
+        case 3: return cdddr(lst);
+        case 4: return cddddr(lst);
+        case 5: return cdr(cddddr(lst));
+        case 6: return cddr(cddddr(lst));
+        case 7: return cdddr(cddddr(lst));
+        case 8: return cddddr(cddddr(lst));
+        case 9: return cdr(cddddr(cddddr(lst)));
+        case 10: return cddr(cddddr(cddddr(lst)));
+        }
+    }
+#endif
+    while (idx--) {
+        lst = cdr(lst);
+    }
+    return lst;
+}
+
 inline list_bind_2 first_2(value x) { return {first(x), second(x)}; }
 inline list_bind_3 first_3(value x) { return {first(x), second(x), third(x)}; }
 inline list_bind_4 first_4(value x) { return {first(x), second(x), third(x), fourth(x)}; }
+
+//
+// Optional list accessors
+//
+inline std::optional<value> car_opt(value x) {
+    if (is_nil(x)) {
+        return std::nullopt;
+    }
+    return car(x);
+}
+inline std::optional<value> cdr_opt(value x) {
+    if (is_nil(x)) {
+        return std::nullopt;
+    }
+    return cdr(x);
+}
+inline std::optional<value> caar_opt(value x) { return internal::flat_map<value>(car_opt(x), car_opt); }
+inline std::optional<value> cadr_opt(value x) { return internal::flat_map<value>(cdr_opt(x), car_opt); }
+inline std::optional<value> cdar_opt(value x) { return internal::flat_map<value>(car_opt(x), cdr_opt); }
+inline std::optional<value> cddr_opt(value x) { return internal::flat_map<value>(cdr_opt(x), cdr_opt); }
+inline std::optional<value> caaar_opt(value x) { return internal::flat_map<value>(caar_opt(x), car_opt); }
+inline std::optional<value> caadr_opt(value x) { return internal::flat_map<value>(cadr_opt(x), car_opt); }
+inline std::optional<value> cadar_opt(value x) { return internal::flat_map<value>(cdar_opt(x), car_opt); }
+inline std::optional<value> caddr_opt(value x) { return internal::flat_map<value>(cddr_opt(x), car_opt); }
+inline std::optional<value> cdaar_opt(value x) { return internal::flat_map<value>(caar_opt(x), cdr_opt); }
+inline std::optional<value> cdadr_opt(value x) { return internal::flat_map<value>(cadr_opt(x), cdr_opt); }
+inline std::optional<value> cddar_opt(value x) { return internal::flat_map<value>(cdar_opt(x), cdr_opt); }
+inline std::optional<value> cdddr_opt(value x) { return internal::flat_map<value>(cddr_opt(x), cdr_opt); }
+inline std::optional<value> caaaar_opt(value x) { return internal::flat_map<value>(caaar_opt(x), car_opt); }
+inline std::optional<value> caaadr_opt(value x) { return internal::flat_map<value>(caadr_opt(x), car_opt); }
+inline std::optional<value> caadar_opt(value x) { return internal::flat_map<value>(cadar_opt(x), car_opt); }
+inline std::optional<value> caaddr_opt(value x) { return internal::flat_map<value>(caddr_opt(x), car_opt); }
+inline std::optional<value> cadaar_opt(value x) { return internal::flat_map<value>(cdaar_opt(x), car_opt); }
+inline std::optional<value> cadadr_opt(value x) { return internal::flat_map<value>(cdadr_opt(x), car_opt); }
+inline std::optional<value> caddar_opt(value x) { return internal::flat_map<value>(cddar_opt(x), car_opt); }
+inline std::optional<value> cadddr_opt(value x) { return internal::flat_map<value>(cdddr_opt(x), car_opt); }
+inline std::optional<value> cdaaar_opt(value x) { return internal::flat_map<value>(caaar_opt(x), cdr_opt); }
+inline std::optional<value> cdaadr_opt(value x) { return internal::flat_map<value>(caadr_opt(x), cdr_opt); }
+inline std::optional<value> cdadar_opt(value x) { return internal::flat_map<value>(cadar_opt(x), cdr_opt); }
+inline std::optional<value> cdaddr_opt(value x) { return internal::flat_map<value>(caddr_opt(x), cdr_opt); }
+inline std::optional<value> cddaar_opt(value x) { return internal::flat_map<value>(cdaar_opt(x), cdr_opt); }
+inline std::optional<value> cddadr_opt(value x) { return internal::flat_map<value>(cdadr_opt(x), cdr_opt); }
+inline std::optional<value> cdddar_opt(value x) { return internal::flat_map<value>(cddar_opt(x), cdr_opt); }
+inline std::optional<value> cddddr_opt(value x) { return internal::flat_map<value>(cdddr_opt(x), cdr_opt); }
+
+inline std::optional<value> head_opt(value x) { return car_opt(x); }
+inline std::optional<value> rest_opt(value x) { return cdr_opt(x); }
+inline std::optional<value> first_opt(value x) { return car_opt(x); }
+inline std::optional<value> second_opt(value x) { return cadr_opt(x); }
+inline std::optional<value> third_opt(value x) { return caddr_opt(x); }
+inline std::optional<value> fourth_opt(value x) { return cadddr_opt(x); }
+inline std::optional<value> fifth_opt(value x) { return internal::flat_map<value>(cddddr_opt(x), car_opt); }
+inline std::optional<value> sixth_opt(value x) { return internal::flat_map<value>(cddddr_opt(x), cadr_opt); }
+inline std::optional<value> seventh_opt(value x) { return internal::flat_map<value>(cddddr_opt(x), caddr_opt); }
+inline std::optional<value> eighth_opt(value x) { return internal::flat_map<value>(cddddr_opt(x), cadddr_opt); }
+inline std::optional<value> ninth_opt(value x) {
+    return internal::flat_map<value>(internal::flat_map<value>(cddddr_opt(x), cadddr_opt), car_opt);
+}
+inline std::optional<value> tenth_opt(value x) {
+    return internal::flat_map<value>(internal::flat_map<value>(cddddr_opt(x), cadddr_opt), cadr_opt);
+}
+
+inline std::optional<value> nth_opt(value lst, size_t idx) {
+    return internal::flat_map<value>(nthcdr_opt(lst, idx), car);
+}
+inline std::optional<value> nthcdr_opt(value lst, size_t idx) {
+    std::optional<value> x{lst};
+    while (idx--) {
+        if (!x.has_value()) {
+            return x;
+        }
+        x = cdr_opt(lst);
+    }
+    return x;
+}
 
 //
 // Library list manipulation
@@ -1108,30 +1268,6 @@ inline value assoc(value v, value lst) {
     return nil;
 }
 
-inline value nth(value lst, size_t idx) { return car(nthcdr(lst, idx)); }
-inline value nthcdr(value lst, size_t idx) {
-#ifdef __GNUC__
-    if (__builtin_constant_p(idx)) {
-        switch (idx) {
-        case 0: return lst;
-        case 1: return cdr(lst);
-        case 2: return cddr(lst);
-        case 3: return cdddr(lst);
-        case 4: return cddddr(lst);
-        case 5: return cdr(cddddr(lst));
-        case 6: return cddr(cddddr(lst));
-        case 7: return cdddr(cddddr(lst));
-        case 8: return cddddr(cddddr(lst));
-        case 9: return cdr(cddddr(cddddr(lst)));
-        case 10: return cddr(cddddr(cddddr(lst)));
-        }
-    }
-#endif
-    while (idx--) {
-        lst = cdr(lst);
-    }
-    return lst;
-}
 std::optional<size_t> index_of(value lst, predicate_function auto f) {
     size_t idx = 0;
     for (auto it : lst.iter()) {
@@ -1163,7 +1299,7 @@ inline value range(double start, double end, double step) {
     return h;
 }
 template <typename F>
-    requires std::is_invocable_r<value, F, size_t>::value
+    requires std::is_invocable_r_v<value, F, size_t>
 value build_list(size_t n, F f) {
     value h = nil, t = nil;
     for (size_t i = 0; i < n; ++i) {
