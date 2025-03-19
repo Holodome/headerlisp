@@ -1087,14 +1087,16 @@ inline std::optional<value> nth_opt(value lst, size_t idx) {
     return internal::flat_map<value>(nthcdr_opt(lst, idx), car);
 }
 inline std::optional<value> nthcdr_opt(value lst, size_t idx) {
-    std::optional<value> x{lst};
-    while (idx--) {
-        if (!x.has_value()) {
-            return x;
-        }
-        x = cdr_opt(lst);
+    if (is_nil(lst)) {
+        return std::nullopt;
     }
-    return x;
+    while (idx--) {
+        lst = cdr(lst);
+        if (is_nil(lst)) {
+            return std::nullopt;
+        }
+    }
+    return lst;
 }
 
 //
