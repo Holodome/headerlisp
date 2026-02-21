@@ -1,5 +1,9 @@
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
+#include <list>
+#include <memory>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <vector>
@@ -8,7 +12,7 @@
 
 using namespace headerlisp;
 
-static context_guard guard{};
+static context_guard guard{1 << 24};
 
 // ----- Simple test harness -----
 static int tests_run = 0;
@@ -703,10 +707,10 @@ void test_arithmetic_operators() {
 
     // To avoid ambiguity, test with doubles:
     value quot2 = d1 / d2;
-    TEST(as_num_f64(quot2) == 2.5/1.5, "double/double"); // approx 1.6666667
+    TEST(as_num_f64(quot2) == 2.5 / 1.5, "double/double"); // approx 1.6666667
 
     value quot3 = i1 / d2;
-    TEST(as_num_f64(quot3) == 10.0/1.5, "int/double");
+    TEST(as_num_f64(quot3) == 10.0 / 1.5, "int/double");
 
     // --- value / double ---
     value quot4 = i1 / 2.0;
@@ -750,9 +754,429 @@ void test_arithmetic_operators() {
     TEST(as_num_f64(d1) == 2.5, "original d1 unchanged");
     TEST(as_num_f64(d2) == 1.5, "original d2 unchanged");
 }
+#include <optional>
+#include <vector>
 
-// Then add call to test_arithmetic_operators() in main()
-// Then add call in main: test_invalid_uses();
+// ===== Complex types for serialization test =====
+struct Person {
+    std::string name;
+    std::string address;
+    int age;
+    std::optional<std::string> email;
+};
+
+struct Department {
+    std::string name;
+    Person head;
+    std::vector<Person> employees;
+};
+
+struct Company {
+    std::string name;
+    int founded;
+    std::vector<Department> departments;
+};
+
+// ===== Serialization traits =====
+// Person
+template <> struct headerlisp::to_list<Person> {
+    auto operator()(const Person &p) {
+        value email_val = p.email ? headerlisp::make_value(*p.email) : headerlisp::nil;
+        return headerlisp::list(p.name, p.address, p.age, email_val);
+    }
+};
+
+template <> struct headerlisp::from_list<Person> {
+    Person operator()(value lst) {
+        auto [name, addr, age, email] = headerlisp::first_4(lst);
+        Person p;
+        p.name = headerlisp::as_string_view(name);
+        p.address = headerlisp::as_string_view(addr);
+        p.age = headerlisp::as_num_int(age);
+        if (!headerlisp::is_nil(email)) {
+            p.email = std::string(headerlisp::as_string_view(email));
+        }
+        return p;
+    }
+};
+
+// std::vector<T>
+namespace headerlisp {
+template <typename T> struct to_list<std::vector<T>> {
+    auto operator()(const std::vector<T> &vec) {
+        value result = nil;
+        for (auto it = vec.rbegin(); it != vec.rend(); ++it) {
+            result = headerlisp::cons(headerlisp::make_value(*it), result);
+        }
+        return result;
+    }
+};
+
+template <typename T> struct from_list<std::vector<T>> {
+    std::vector<T> operator()(value lst) {
+        std::vector<T> result;
+        while (!headerlisp::is_nil(lst)) {
+            result.push_back(headerlisp::as<T>(headerlisp::car(lst)));
+            lst = headerlisp::cdr(lst);
+        }
+        return result;
+    }
+};
+} // namespace headerlisp
+
+// Department
+template <> struct headerlisp::to_list<Department> {
+    auto operator()(const Department &d) { return headerlisp::list(d.name, d.head, d.employees); }
+};
+
+template <> struct headerlisp::from_list<Department> {
+    Department operator()(value lst) {
+        auto [name, head, employees] = headerlisp::first_3(lst);
+        Department d;
+        d.name = headerlisp::as_string_view(name);
+        d.head = headerlisp::as<Person>(head);
+        d.employees = headerlisp::as<std::vector<Person>>(employees);
+        return d;
+    }
+};
+
+// Company
+template <> struct headerlisp::to_list<Company> {
+    auto operator()(const Company &c) { return headerlisp::list(c.name, c.founded, c.departments); }
+};
+
+template <> struct headerlisp::from_list<Company> {
+    Company operator()(value lst) {
+        auto [name, founded, depts] = headerlisp::first_3(lst);
+        Company c;
+        c.name = headerlisp::as_string_view(name);
+        c.founded = headerlisp::as_num_int(founded);
+        c.departments = headerlisp::as<std::vector<Department>>(depts);
+        return c;
+    }
+};
+
+// ===== Test function =====
+void test_serialization_complex() {
+    printf("--- Complex serialization test ---\n");
+
+    // Create sample data
+    Person alice{"Alice", "123 Wonderland", 30, "alice@example.com"};
+    Person bob{"Bob", "456 Builder St", 25, std::nullopt};
+    Person charlie{"Charlie", "789 Chocolate Ave", 35, "charlie@wonka.com"};
+
+    Department engineering{"Engineering", alice, {bob, charlie}};
+    Department sales{"Sales", bob, {}}; // empty employees list
+
+    Company company{"TechCorp", 2000, {engineering, sales}};
+
+    // Serialize
+    value serialized = headerlisp::make_value(company);
+    std::string printed = headerlisp::print(serialized);
+    TEST(
+        printed ==
+            R"FOO(("TechCorp" 2000.000000 (("Engineering" ("Alice" "123 Wonderland" 30.000000 "alice@example.com") (("Bob" "456 Builder St" 25.000000 ()) ("Charlie" "789 Chocolate Ave" 35.000000 "charlie@wonka.com"))) ("Sales" ("Bob" "456 Builder St" 25.000000 ()) ()))))FOO",
+        "serialized wrong");
+
+    // Deserialize
+    value read_back = headerlisp::read(printed);
+    Company deserialized = headerlisp::as<Company>(read_back);
+
+    // Verify
+    TEST(deserialized.name == "TechCorp", "company name");
+    TEST(deserialized.founded == 2000, "founded year");
+    TEST(deserialized.departments.size() == 2, "department count");
+
+    const auto &dept0 = deserialized.departments[0];
+    TEST(dept0.name == "Engineering", "first dept name");
+    TEST(dept0.head.name == "Alice", "dept head name");
+    TEST(dept0.head.email.has_value() && *dept0.head.email == "alice@example.com", "head email");
+    TEST(dept0.employees.size() == 2, "engineering employees count");
+    TEST(dept0.employees[0].name == "Bob", "first employee name");
+    TEST(!dept0.employees[0].email.has_value(), "bob no email");
+    TEST(dept0.employees[1].name == "Charlie", "second employee name");
+    TEST(dept0.employees[1].email.has_value() && *dept0.employees[1].email == "charlie@wonka.com", "charlie email");
+
+    const auto &dept1 = deserialized.departments[1];
+    TEST(dept1.name == "Sales", "second dept name");
+    TEST(dept1.head.name == "Bob", "sales head name");
+    TEST(dept1.employees.empty(), "sales employees empty");
+
+    // Test round-trip on a single Person with optional
+    value person_val = headerlisp::make_value(alice);
+    std::string person_str = headerlisp::print(person_val);
+    value person_read = headerlisp::read(person_str);
+    Person alice2 = headerlisp::as<Person>(person_read);
+    TEST(alice2.name == "Alice", "person name");
+    TEST(alice2.email.has_value() && *alice2.email == "alice@example.com", "person email");
+
+    // Test Person with missing email (Bob)
+    person_val = headerlisp::make_value(bob);
+    person_str = headerlisp::print(person_val);
+    person_read = headerlisp::read(person_str);
+    Person bob2 = headerlisp::as<Person>(person_read);
+    TEST(bob2.name == "Bob", "bob name");
+    TEST(!bob2.email.has_value(), "bob email missing");
+
+    // Test empty list serialization (e.g., empty vector of Persons)
+    std::vector<Person> empty;
+    value empty_val = headerlisp::make_value(empty);
+    std::string empty_str = headerlisp::print(empty_val);
+    TEST(empty_str == "()", "empty list prints as ()");
+    auto empty_vec = headerlisp::as<std::vector<Person>>(headerlisp::read(empty_str));
+    TEST(empty_vec.empty(), "empty vector deserialized");
+}
+
+struct Node {
+    virtual ~Node() = default;
+    virtual int eval() = 0;
+};
+
+struct Num : Node {
+    int value;
+    Num(int v) : value(v) {}
+    int eval() override { return value; }
+};
+
+struct Add : Node {
+    std::vector<std::unique_ptr<Node>> args;
+    int eval() override {
+        int sum = 0;
+        for (auto &arg : args)
+            sum += arg->eval();
+        return sum;
+    }
+};
+
+struct Mul : Node {
+    std::vector<std::unique_ptr<Node>> args;
+    int eval() override {
+        int product = 1;
+        for (auto &arg : args)
+            product *= arg->eval();
+        return product;
+    }
+};
+
+struct Sub : Node {
+    std::vector<std::unique_ptr<Node>> args;
+    int eval() override {
+        if (args.empty())
+            throw std::runtime_error("- requires at least one argument");
+        int result = args[0]->eval();
+        if (args.size() == 1) {
+            return -result;
+        }
+        for (size_t i = 1; i < args.size(); ++i)
+            result -= args[i]->eval();
+        return result;
+    }
+};
+
+struct Div : Node {
+    std::vector<std::unique_ptr<Node>> args;
+    int eval() override {
+        if (args.size() < 2)
+            throw std::runtime_error("/ requires at least two arguments");
+        int result = args[0]->eval();
+        for (size_t i = 1; i < args.size(); ++i) {
+            int divisor = args[i]->eval();
+            if (divisor == 0)
+                throw std::runtime_error("division by zero");
+            result /= divisor;
+        }
+        return result;
+    }
+};
+
+// Recursive s-expression traversal that builds tree of Nodes.
+std::unique_ptr<Node> parse_tree(headerlisp::value it) {
+    if (headerlisp::is_num(it)) {
+        return std::make_unique<Num>(headerlisp::as_num_int(it));
+    }
+
+    // Must be a list
+    if (!headerlisp::is_list(it)) {
+        throw std::runtime_error("expected list or number");
+    }
+
+    // Get operator (first element)
+    headerlisp::value op_val = headerlisp::first(it);
+    if (!headerlisp::is_string(op_val)) {
+        throw std::runtime_error("operator must be a symbol (string)");
+    }
+    std::string_view op = headerlisp::as_string_view(op_val);
+
+    // Collect arguments (rest of the list)
+    headerlisp::value rest = headerlisp::rest(it);
+    std::vector<std::unique_ptr<Node>> args;
+    while (!headerlisp::is_nil(rest)) {
+        args.push_back(parse_tree(headerlisp::first(rest)));
+        rest = headerlisp::rest(rest);
+    }
+
+    // Create appropriate node
+    if (op == "+") {
+        auto node = std::make_unique<Add>();
+        node->args = std::move(args);
+        return node;
+    } else if (op == "*") {
+        auto node = std::make_unique<Mul>();
+        node->args = std::move(args);
+        return node;
+    } else if (op == "-") {
+        auto node = std::make_unique<Sub>();
+        node->args = std::move(args);
+        return node;
+    } else if (op == "/") {
+        auto node = std::make_unique<Div>();
+        node->args = std::move(args);
+        return node;
+    } else {
+        throw std::runtime_error("unknown operator: " + std::string(op));
+    }
+}
+
+// Convert string to interpreter tree.
+std::unique_ptr<Node> parse(std::string_view input) {
+    headerlisp::context_guard ctx{};
+    headerlisp::value ast;
+    try {
+        ast = headerlisp::read(input);
+    } catch (headerlisp::hl_exception &e) { throw std::runtime_error("reading error: " + std::string(e.what())); }
+    return parse_tree(ast);
+}
+
+void test_variable_arity_parser() {
+    printf("--- Variable-arity parser test ---\n");
+
+    // Test cases
+    struct TestCase {
+        std::string input;
+        int expected;
+    } tests[] = {
+        {"(+ 1 2 3 4)", 10},
+        {"(* 2 3 4)", 24},
+        {"(- 10 3 2)", 5},                       // 10-3-2 =5
+        {"(- 5)", -5},                           // unary minus
+        {"(/ 100 5 2)", 10},                     // 100/5/2 =10
+        {"(+ (* 2 3) (- 10 4) 1)", (6 + 6 + 1)}, // 2*3=6, 10-4=6, +1 =13? Wait 10-4=6, 6+6+1=13? Actually 6+6+1=13.
+                                                 // Check: (+ (* 2 3) (- 10 4) 1) = (+ 6 6 1) =13
+        {"(* (+ 1 2) (- 5 2) 2)", (3 * 3 * 2)},
+        {"(/ 100 (* 2 5) 2)", (100 / 10 / 2)},
+        {"(+ 5)", 5}, // single argument addition
+        {"(* 5)", 5}, // single argument multiplication
+    };
+
+    for (const auto &t : tests) {
+        try {
+            auto tree = parse(t.input);
+            int result = tree->eval();
+            TEST(result == t.expected, t.input + " evaluates correctly");
+        } catch (const std::exception &e) { TEST(false, t.input + " threw exception"); }
+    }
+
+    // Error cases
+    TEST_THROWS(parse("(unknown 1 2)"), "unknown operator");
+    TEST_THROWS(parse("(+ 1 2 . 3)"), "improper list");
+}
+// Simple custom type for testing from_list conversion
+struct Point {
+    int x, y;
+    
+    bool operator==(Point other) const {
+        return x == other.x && y == other.y;
+    }
+};
+
+template <> struct headerlisp::to_list<Point> {
+    auto operator()(const Point &p) { return headerlisp::list(p.x, p.y); }
+};
+
+template <> struct headerlisp::from_list<Point> {
+    Point operator()(value lst) {
+        auto [x, y] = headerlisp::first_2(lst);
+        return {headerlisp::as_num_int(x), headerlisp::as_num_int(y)};
+    }
+};
+
+void test_iterators() {
+    printf("--- Iterator tests ---\n");
+
+    // Basic iteration over homogeneous list
+    value nums = headerlisp::list(1, 2, 3, 4, 5);
+    std::vector<int> collected;
+    for (int x : nums.iter().as<int>()) {
+        collected.push_back(x);
+    }
+    TEST(collected == std::vector<int>({1, 2, 3, 4, 5}), "iter().as<int>() collects correctly");
+
+    // Using std::copy with back_inserter
+    std::vector<int> vec;
+    auto it_begin = nums.iter().as<int>().begin();
+    auto it_end = nums.iter().as<int>().end();
+    std::copy(it_begin, it_end, std::back_inserter(vec));
+    TEST(vec == std::vector<int>({1, 2, 3, 4, 5}), "std::copy works");
+
+    // Using std::transform
+    std::vector<int> squares;
+    std::transform(it_begin, it_end, std::back_inserter(squares), [](int x) { return x * x; });
+    TEST(squares == std::vector<int>({1, 4, 9, 16, 25}), "std::transform");
+
+    // Using std::accumulate
+    int sum = std::accumulate(it_begin, it_end, 0);
+    TEST(sum == 15, "std::accumulate");
+
+    // Using std::for_each
+    int counter = 0;
+    std::for_each(it_begin, it_end, [&counter](int) { ++counter; });
+    TEST(counter == 5, "std::for_each");
+
+    // Constructing standard containers from iterator range
+    std::list<int> lst(it_begin, it_end);
+    TEST(lst.size() == 5 && lst.front() == 1 && lst.back() == 5, "list constructor from iterators");
+
+    // Test empty list iteration
+    value empty = headerlisp::nil;
+    auto empty_range = empty.iter().as<int>();
+    TEST(empty_range.begin() == empty_range.end(), "empty list iterators equal");
+
+    // Test heterogeneous list: iter().as<T>() should throw if element not convertible
+    value mixed = headerlisp::list(1, "hello", 3.14);
+    bool threw = false;
+    try {
+        for (int x : mixed.iter().as<int>()) {
+            (void)x;
+        }
+    } catch (...) { threw = true; }
+    TEST(threw, "heterogeneous list throws in as<int> iteration");
+
+    // But iter() without .as<T>() works (yields value objects)
+    int count = 0;
+    for (value _ : mixed.iter()) {
+        ++count;
+    }
+    TEST(count == 3, "iter() on heterogeneous list counts elements");
+
+    // Test .as<Point>() with custom type
+    value points = headerlisp::list(Point{1, 2}, Point{3, 4}, Point{5, 6});
+    std::vector<Point> points_vec;
+    for (const Point &p : points.iter().as<Point>()) {
+        points_vec.push_back(p);
+    }
+    TEST(points_vec.size() == 3, "points count");
+    TEST(points_vec[0].x == 1 && points_vec[0].y == 2, "first point");
+    TEST(points_vec[2].x == 5 && points_vec[2].y == 6, "last point");
+
+    // Using .as<Point>() with algorithms
+    std::vector<Point> points2;
+    std::copy(points.iter().as<Point>().begin(), points.iter().as<Point>().end(), std::back_inserter(points2));
+    TEST(!!std::equal(points2.begin(), points2.end(), points_vec.begin()), "copy points");
+
+    int fold_sum = headerlisp::foldl([](value x, int acc) { return headerlisp::as_num_int(x) + acc; }, 0, nums);
+    TEST(fold_sum == 15, "foldl with iter()");
+}
+
 int main() {
     printf("Running tests for Lisp list library...\n\n");
 
@@ -769,6 +1193,9 @@ int main() {
     test_map_filter_heterogeneous();
     test_invalid_uses();
     test_arithmetic_operators();
+    test_serialization_complex();
+    test_variable_arity_parser();
+    test_iterators();
 
     printf("\n=== Test summary ===\n");
     printf("Tests run: %d\n", tests_run);

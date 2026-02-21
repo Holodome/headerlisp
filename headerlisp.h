@@ -51,7 +51,7 @@ struct context {
     size_t memory_used = 0;
     size_t memory_reserved = 0;
 };
-inline void set_context(context ctx);
+inline context set_context(context ctx);
 
 class context_guard {
 public:
@@ -64,13 +64,17 @@ public:
     explicit context_guard(size_t size) : memory_(static_cast<char *>(malloc(size))), memory_size_(size) {
         if (memory_ == nullptr)
             throw std::bad_alloc{};
-        set_context(context{memory_, 0, memory_size_});
+        old_context_ = set_context(context{memory_, 0, memory_size_});
     }
-    ~context_guard() { set_context(context{}); }
+    ~context_guard() {
+        set_context(old_context_);
+        free(memory_);
+    }
 
 private:
     char *memory_ = nullptr;
     size_t memory_size_ = 0;
+    context old_context_{};
 };
 
 //
@@ -200,6 +204,7 @@ inline void unwrap_setcdr(value c, value cdr) noexcept;
 inline std::string_view as_string_view(value x);
 inline double as_num_f64(value x);
 inline int as_num_int(value x);
+template <typename T, typename = std::enable_if<from_list_concept<T>::value>> inline T as(value x);
 inline value &car(value x);
 inline value &cdr(value x);
 
@@ -553,7 +558,11 @@ inline void check_cons_nil(value x) {
 
 } // namespace internal
 
-inline void set_context(context ctx) { internal::g_ctx = std::move(ctx); }
+inline context set_context(context ctx) {
+    context old = internal::g_ctx;
+    internal::g_ctx = std::move(ctx);
+    return old;
+}
 
 //
 // Value constructors
@@ -801,6 +810,7 @@ inline value &car(value x) {
         throw hl_exception("called 'car()' on non-cons value %s", value_kind_str(x));
     return unwrap_car(x);
 }
+template <typename T, typename> inline T as(value x) { return from_list<T>{}(x); }
 inline value &cdr(value x) {
     if (!is_cons(x))
         throw hl_exception("called 'car()' on non-cons value %s", value_kind_str(x));
