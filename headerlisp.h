@@ -4,7 +4,7 @@
 //
 // MIT License
 //
-// Copyright (c) 2024 Ilya Vinogradov
+// Copyright (c) 2024-2026 Ilya Vinogradov
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -93,7 +93,7 @@ enum class value_kind : uint8_t {
     string = 0x4,
 };
 
-// Disallow calling functions without namespace due to namespace lookup rules
+// Forbid calling functions without namespace due to namespace lookup rules
 namespace value_ns {
 
 class value {
@@ -142,23 +142,12 @@ private:
 
 template <typename T> struct to_list {};
 template <typename T> struct from_list {};
-template <typename T> struct list_tag {};
 
 template <typename T, typename = void> struct to_list_concept : std::false_type {};
 template <typename T> struct to_list_concept<T, std::void_t<decltype(sizeof(to_list<T>))>> : std::true_type {};
 
 template <typename T, typename = void> struct from_list_concept : std::false_type {};
 template <typename T> struct from_list_concept<T, std::void_t<decltype(sizeof(from_list<T>))>> : std::true_type {};
-
-template <> struct list_tag<std::string_view> {
-    constexpr static inline std::string_view tag = "string";
-};
-template <> struct list_tag<double> {
-    constexpr static inline std::string_view tag = "num";
-};
-template <> struct list_tag<int> {
-    constexpr static inline std::string_view tag = "num";
-};
 
 //
 // Value constructors

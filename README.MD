@@ -1,30 +1,36 @@
 # headerlisp
 
-Lisp in C++20.
+Lisp in C++17.
 
 More fundamentally, this is dead-simple dynamically-typed tool for processing lists inside C++ with additional serialization and deserialization abilities for user-defined types.
 
 ```cpp
 auto lst = list(1, 2, 3, list("hello, world"));
      lst = map([](auto x) { return is_num(x) ? x * 2 : x; }, lst);
-std::string result = print(lst); // (2, 4, 6, ("hello, world"))
+std::string result = print(lst); // (2 4 6 ("hello, world"))
 ```
+
+## Getting started
+
+Copy [headerlisp.h](headerlisp.h) to your project source tree. Use it.
+
+For additional information about API functions refer to their implementation. 
 
 ## Motivation
 
 There are three main use cases for headerlisp:
 
-1. *Parsers* - Instead of using [lex](https://en.wikipedia.org/wiki/Lex_(software)) and [bison](https://en.wikipedia.org/wiki/GNU_Bison) (or something even more cursed like [boost::spirit](https://www.boost.org/doc/libs/1_86_0/libs/spirit/doc/html/index.html)) to create custom parser and doing it from scratch, lisp s-expressions can be used to define syntax. Headerlisp allows parsing s-expressions and traversing them.
+1. *Parsers* - Instead of using [lex](https://en.wikipedia.org/wiki/Lex_(software)) and [bison](https://en.wikipedia.org/wiki/GNU_Bison) (or something even more cursed like [boost::spirit](https://www.boost.org/doc/libs/1_86_0/libs/spirit/doc/html/index.html)) to create custom parser and doing it from scratch, lisp s-expressions can be used to define syntax. headerlisp allows parsing s-expressions and traversing them.
 2. *DSLs* - Custom parsers allow easy writing of DSLs for different tasks, where using anything more complex would be too time-consuming.
-3. *Quick serialization/deserialization* - Headerlisp has abilities to read and write user-defined into and from s-expression trees. This can be used to implement ad-hoc serialization.
+3. *Quick serialization/deserialization* - headerlisp has abilities to read and write user-defined into and from s-expression trees. This can be used to implement ad-hoc serialization.
 
 ## Examples
 
-1. [interp.cpp](examples/interp.cpp) - headerlisp used to implement parser for expression interpreter
-1. [interp_func.cpp](examples/interp_func.cpp) - interp.cpp using function-call syntax instead of s-expressions
-2. [processing.cpp](examples/processing.cpp) - showcase of list processing functions (`map`, `filter`, iteration etc.)
-3. [serialize.cpp](examples/serialize.cpp) - using headerlisp as serialization tool and format
-4. [wire.cpp](examples/wire.cpp) - using headerlisp as a format for passing commands between threads
+1. [interp.cpp](examples/interp.cpp) - headerlisp used to implement parser for expression interpreter.
+2. [interp_func.cpp](examples/interp_func.cpp) - variant of interp.cpp using function-call syntax instead of s-expressions
+3. [processing.cpp](examples/processing.cpp) - showcase of list processing functions (`map`, `filter`, iteration).
+4. [serialize.cpp](examples/serialize.cpp) - using headerlisp as serialization tool and format.
+5. [tests.cpp](examples/tests.cpp) - various tests for API functions.
 
 ## Design decisions
 
@@ -35,7 +41,7 @@ There are three main use cases for headerlisp:
     - nil `()`
     - string 
 2. Values are stored and accessed using Nan-Boxing. Only strings and conses are heap-allocated.
-3. There is no garbage collector. All memory is allocated within pre-allocated memory context, that can be changed using `headerlisp::set_context` or `headerlisp::context_guard`
+3. There is no garbage collector. All memory is allocated within pre-allocated thread-local memory context, that can be set using `headerlisp::set_context` or `headerlisp::context_guard`. By default `headerlisp::context_guard` pre-allocates 1 MB of memory that is freed when it is destroyed. 
     ```cpp
     {   
         headerlisp::context_guard ctx{};
