@@ -101,6 +101,8 @@ class value {
 
 public:
     constexpr value();
+    constexpr value(nullptr_t);
+
     constexpr value(const value &) noexcept = default;
     constexpr value(value &&) noexcept = default;
     constexpr value &operator=(const value &) noexcept = default;
@@ -109,7 +111,12 @@ public:
     constexpr static value make(uint64_t x) noexcept { return value(constructor_tag{}, x); }
     constexpr uint64_t internal() const noexcept { return u64_; }
 
+    value_kind kind() const;
     value_range iter() const noexcept;
+    template <typename T> T as() const;
+    int as_int() const { return as<int>(); }
+    double as_f64() const { return as<double>(); }
+    std::string_view as_string_view() const { return as<std::string_view>(); }
 
 private:
     constexpr value(constructor_tag, uint64_t x) noexcept : u64_(x) {}
@@ -161,6 +168,7 @@ inline value new_stringz(const char *str);
 inline value cons(value car, value cdr);
 
 template <typename... Args> value list(Args &&...args);
+template <typename It> value list_from_iter(It start, It end);
 
 //
 // Type checkers
@@ -592,7 +600,17 @@ template <typename... Args> value list(Args &&...args) {
     return h;
 }
 
+template <typename It> value list_from_iter(It start, It end) {
+    value h = nil;
+    value t = nil;
+    for (It it = start; it < end; ++it) {
+        add_last(h, t, make_value(*it));
+    }
+    return h;
+}
+
 constexpr value::value() : u64_(nil.u64_) {}
+constexpr value::value(nullptr_t) : u64_(nil.u64_) {}
 
 inline value cons(value car, value cdr) { return internal::new_cons(&internal::g_ctx, car, cdr); }
 inline value new_string(const char *value, size_t length) {
@@ -621,15 +639,17 @@ public:
     explicit constexpr value_iter(value x) noexcept : current_(x) {}
 
     reference operator*() { return car(current_); }
-    constexpr bool operator==(value_iter other) noexcept { return current_.internal() == other.current_.internal(); }
-    constexpr bool operator!=(value_iter other) noexcept { return !(*this == other); }
+    constexpr bool operator==(value_iter other) const noexcept {
+        return current_.internal() == other.current_.internal();
+    }
+    constexpr bool operator!=(value_iter other) const noexcept { return !(*this == other); }
 
-    constexpr value_iter operator++(int) const noexcept {
+    constexpr value_iter operator++(int) const {
         value_iter tmp = *this;
         ++tmp;
         return tmp;
     }
-    constexpr value_iter &operator++() noexcept {
+    constexpr value_iter &operator++() {
         current_ = cdr(current_);
         return *this;
     }
@@ -638,6 +658,7 @@ private:
     value current_;
 };
 
+// FIXME: Make this lazy init of T
 template <typename T, typename = std::enable_if<to_list_concept<T>::value>> class deserializing_value_iter {
 public:
     using difference_type = ptrdiff_t;
@@ -683,13 +704,13 @@ private:
 
 template <typename T, typename = std::enable_if<from_list_concept<T>::value>> class deserializing_value_range {
 public:
-    deserializing_value_range() = delete;
-    deserializing_value_range(const deserializing_value_range &) noexcept = default;
-    deserializing_value_range(deserializing_value_range &&) noexcept = default;
-    deserializing_value_range &operator=(const deserializing_value_range &) noexcept = default;
-    deserializing_value_range &operator=(deserializing_value_range &&) noexcept = default;
+    constexpr deserializing_value_range() = delete;
+    constexpr deserializing_value_range(const deserializing_value_range &) noexcept = default;
+    constexpr deserializing_value_range(deserializing_value_range &&) noexcept = default;
+    constexpr deserializing_value_range &operator=(const deserializing_value_range &) noexcept = default;
+    constexpr deserializing_value_range &operator=(deserializing_value_range &&) noexcept = default;
 
-    explicit deserializing_value_range(value x) noexcept : start_(x) {}
+    explicit constexpr deserializing_value_range(value x) noexcept : start_(x) {}
 
     deserializing_value_iter<T> begin() const { return deserializing_value_iter<T>{start_}; }
     deserializing_value_iter<T> end() const { return deserializing_value_iter<T>{nil}; }
@@ -700,16 +721,16 @@ private:
 
 class value_range {
 public:
-    value_range() = delete;
-    value_range(const value_range &) noexcept = default;
-    value_range(value_range &&) noexcept = default;
-    value_range &operator=(const value_range &) noexcept = default;
-    value_range &operator=(value_range &&) noexcept = default;
+    constexpr value_range() = delete;
+    constexpr value_range(const value_range &) noexcept = default;
+    constexpr value_range(value_range &&) noexcept = default;
+    constexpr value_range &operator=(const value_range &) noexcept = default;
+    constexpr value_range &operator=(value_range &&) noexcept = default;
 
-    explicit value_range(value x) noexcept : start_(x) {}
+    explicit constexpr value_range(value x) noexcept : start_(x) {}
 
-    value_iter begin() const noexcept { return value_iter{start_}; }
-    value_iter end() const noexcept { return value_iter{nil}; }
+    constexpr value_iter begin() const noexcept { return value_iter{start_}; }
+    constexpr value_iter end() const noexcept { return value_iter{nil}; }
 
     template <typename T> deserializing_value_range<T> as() const noexcept {
         return deserializing_value_range<T>(start_);
@@ -800,6 +821,7 @@ inline value &car(value x) {
     return unwrap_car(x);
 }
 template <typename T, typename> inline T as(value x) { return from_list<T>{}(x); }
+template <typename T> T value::as() const { return ::headerlisp::as<T>(*this); }
 inline value &cdr(value x) {
     if (!is_cons(x))
         throw hl_exception("called 'car()' on non-cons value %s", value_kind_str(x));
@@ -810,6 +832,8 @@ inline cons_unapply_result unapply_cons(value x) {
         throw hl_exception("called 'car()' on non-cons value %s", value_kind_str(x));
     return {unwrap_car(x), unwrap_cdr(x)};
 }
+
+inline value_kind value::kind() const { return get_value_kind(*this); }
 
 //
 // Library list accessors
@@ -868,23 +892,6 @@ inline value tenth(value x) { return cadr(cdddr(cddddr(x))); }
 
 inline value nth(value lst, size_t idx) { return car(nthcdr(lst, idx)); }
 inline value nthcdr(value lst, size_t idx) {
-#ifdef __GNUC__
-    if (__builtin_constant_p(idx) && idx <= 10) {
-        switch (idx) {
-        case 0: return lst;
-        case 1: return cdr(lst);
-        case 2: return cddr(lst);
-        case 3: return cdddr(lst);
-        case 4: return cddddr(lst);
-        case 5: return cdr(cddddr(lst));
-        case 6: return cddr(cddddr(lst));
-        case 7: return cdddr(cddddr(lst));
-        case 8: return cddddr(cddddr(lst));
-        case 9: return cdr(cddddr(cddddr(lst)));
-        case 10: return cddr(cddddr(cddddr(lst)));
-        }
-    }
-#endif
     while (idx--) {
         lst = cdr(lst);
     }

@@ -80,36 +80,36 @@ void test_creation_and_access() {
     value lst = list(1, 2, 3, 4, 5);
     TEST(length(lst) == 5, "length should be 5");
 
-    TEST(as_num_int(car(lst)) == 1, "car of list should be 1");
-    TEST(as_num_int(cadr(lst)) == 2, "cadr should be 2");
+    TEST(car(lst).as_int() == 1, "car of list should be 1");
+    TEST(cadr(lst).as_int() == 2, "cadr should be 2");
     // Use proper accessors
-    TEST(as_num_int(first(lst)) == 1, "first == 1");
-    TEST(as_num_int(second(lst)) == 2, "second == 2");
-    TEST(as_num_int(third(lst)) == 3, "third == 3");
-    TEST(as_num_int(fourth(lst)) == 4, "fourth == 4");
-    TEST(as_num_int(fifth(lst)) == 5, "fifth == 5");
+    TEST(first(lst).as_int() == 1, "first == 1");
+    TEST(second(lst).as_int() == 2, "second == 2");
+    TEST(third(lst).as_int() == 3, "third == 3");
+    TEST(fourth(lst).as_int() == 4, "fourth == 4");
+    TEST(fifth(lst).as_int() == 5, "fifth == 5");
     // nth
-    TEST(as_num_int(nth(lst, 0)) == 1, "nth 0 == 1");
-    TEST(as_num_int(nth(lst, 4)) == 5, "nth 4 == 5");
-    TEST_THROWS(as_num_int(nth(lst, 5)), "nth out of bounds should throw");
+    TEST(nth(lst, 0).as_int() == 1, "nth 0 == 1");
+    TEST(nth(lst, 4).as_int() == 5, "nth 4 == 5");
+    TEST_THROWS(nth(lst, 5).as_int(), "nth out of bounds should throw");
     // nthcdr
     value rest2 = nthcdr(lst, 2);
     TEST(length(rest2) == 3, "nthcdr 2 should have length 3");
-    TEST(as_num_int(car(rest2)) == 3, "car of nthcdr 2 should be 3");
+    TEST(car(rest2).as_int() == 3, "car of nthcdr 2 should be 3");
 
     // first_2, first_3, first_4
     auto [a, b] = first_2(lst);
-    TEST(as_num_int(a) == 1 && as_num_int(b) == 2, "first_2");
+    TEST(a.as_int() == 1 && b.as_int() == 2, "first_2");
     auto [c, d, e] = first_3(lst);
-    TEST(as_num_int(c) == 1 && as_num_int(d) == 2 && as_num_int(e) == 3, "first_3");
+    TEST(c.as_int() == 1 && d.as_int() == 2 && e.as_int() == 3, "first_3");
     auto [f, g, h, i] = first_4(lst);
-    TEST(as_num_int(f) == 1 && as_num_int(g) == 2 && as_num_int(h) == 3 && as_num_int(i) == 4, "first_4");
+    TEST(f.as_int() == 1 && g.as_int() == 2 && h.as_int() == 3 && i.as_int() == 4, "first_4");
 
     // cons unapply
     value pair = cons(make_value(10), make_value(20));
     auto [car_ref, cdr_ref] = unapply_cons(pair);
-    TEST(as_num_int(car_ref) == 10, "unapply_cons car");
-    TEST(as_num_int(cdr_ref) == 20, "unapply_cons cdr");
+    TEST(car_ref.as_int() == 10, "unapply_cons car");
+    TEST(cdr_ref.as_int() == 20, "unapply_cons cdr");
 }
 
 void test_optional_accessors() {
@@ -118,22 +118,22 @@ void test_optional_accessors() {
     value empty = nil;
 
     TEST(car_opt(lst).has_value(), "car_opt on non-empty");
-    TEST(as_num_int(*car_opt(lst)) == 1, "car_opt value");
+    TEST((*car_opt(lst)).as_int() == 1, "car_opt value");
     TEST(!car_opt(empty).has_value(), "car_opt on nil");
 
     TEST(cdr_opt(lst).has_value(), "cdr_opt on non-empty");
     TEST(length(*cdr_opt(lst)) == 2, "cdr_opt length");
     TEST(!cdr_opt(empty).has_value(), "cdr_opt on nil");
 
-    TEST(cadr_opt(lst).has_value() && as_num_int(*cadr_opt(lst)) == 2, "cadr_opt");
+    TEST(cadr_opt(lst).has_value() && (*cadr_opt(lst)).as_int() == 2, "cadr_opt");
     TEST(!caadr_opt(empty).has_value(), "caadr_opt on nil");
 
-    TEST(nth_opt(lst, 2).has_value() && as_num_int(*nth_opt(lst, 2)) == 3, "nth_opt");
+    TEST(nth_opt(lst, 2).has_value() && (*nth_opt(lst, 2)).as_int() == 3, "nth_opt");
     TEST(!nth_opt(lst, 5).has_value(), "nth_opt out of range");
     TEST(nthcdr_opt(lst, 1).has_value() && length(*nthcdr_opt(lst, 1)) == 2, "nthcdr_opt");
     TEST(!nthcdr_opt(lst, 5).has_value(), "nthcdr_opt out of range");
 
-    TEST(head_opt(lst) && as_num_int(*head_opt(lst)) == 1, "head_opt");
+    TEST(head_opt(lst) && (*head_opt(lst)).as_int() == 1, "head_opt");
     TEST(!head_opt(empty).has_value(), "head_opt on nil");
     TEST(rest_opt(lst) && length(*rest_opt(lst)) == 2, "rest_opt");
     TEST(!rest_opt(empty).has_value(), "rest_opt on nil");
@@ -147,11 +147,11 @@ void test_list_manipulation() {
     // append
     value ab = append(a, b);
     TEST(length(ab) == 6, "append length");
-    TEST(as_num_int(nth(ab, 3)) == 4, "append element");
+    TEST(nth(ab, 3).as_int() == 4, "append element");
 
     // reverse
     value rev = reverse(a);
-    TEST(as_num_int(first(rev)) == 3 && as_num_int(third(rev)) == 1, "reverse");
+    TEST(first(rev).as_int() == 3 && third(rev).as_int() == 1, "reverse");
 
     // add_last (modifies first and last)
     value first_list = a;
@@ -159,7 +159,7 @@ void test_list_manipulation() {
     value new_elem = make_value(7);
     add_last(first_list, last_list, new_elem);
     TEST(length(first_list) == 4, "add_last length");
-    TEST(as_num_int(nth(first_list, 3)) == 7, "add_last element");
+    TEST(nth(first_list, 3).as_int() == 7, "add_last element");
 
     // cartesian_product
     value nums = list(1, 2);
@@ -170,11 +170,11 @@ void test_list_manipulation() {
     // range
     value r = range(5);
     TEST(length(r) == 5, "range(5) length");
-    TEST(as_num_int(nth(r, 0)) == 0 && as_num_int(nth(r, 4)) == 4, "range values");
+    TEST(nth(r, 0).as_int() == 0 && nth(r, 4).as_int() == 4, "range values");
     value r2 = range(1.0, 5.0, 1.5);
     TEST(length(r2) == 3, "range with step length");
     // values: 1.0, 2.5, 4.0
-    TEST(as_num_f64(nth(r2, 0)) == 1.0 && as_num_f64(nth(r2, 2)) == 4.0, "range step values");
+    TEST(nth(r2, 0).as_f64() == 1.0 && nth(r2, 2).as_f64() == 4.0, "range step values");
 }
 
 void test_higher_order_functions() {
@@ -182,13 +182,13 @@ void test_higher_order_functions() {
     value lst = list(1, 2, 3, 4, 5);
 
     // map
-    value doubled = map([](value x) { return make_value(as_num_int(x) * 2); }, lst);
-    TEST(as_num_int(first(doubled)) == 2 && as_num_int(fifth(doubled)) == 10, "map double");
+    value doubled = map([](value x) { return make_value(x.as_int() * 2); }, lst);
+    TEST(first(doubled).as_int() == 2 && fifth(doubled).as_int() == 10, "map double");
 
     // filter
     value odds = filter(is_odd, lst);
     TEST(length(odds) == 3, "filter odds");
-    TEST(as_num_int(first(odds)) == 1 && as_num_int(third(odds)) == 5, "filter values");
+    TEST(first(odds).as_int() == 1 && third(odds).as_int() == 5, "filter values");
 
     // filter_not
     value evens = filter_not(is_odd, lst);
@@ -204,28 +204,28 @@ void test_higher_order_functions() {
     TEST(length(no_2) == 3, "remove by value");
 
     // all
-    TEST(all([](value x) { return as_num_int(x) > 0; }, lst), "all positive");
+    TEST(all([](value x) { return x.as_int() > 0; }, lst), "all positive");
     TEST(!all(is_odd, lst), "not all odd");
 
     // any
     TEST(any(is_odd, lst), "any odd");
-    TEST(!any([](value x) { return as_num_int(x) > 10; }, lst), "any >10 false");
+    TEST(!any([](value x) { return x.as_int() > 10; }, lst), "any >10 false");
 
     // foldl
-    int sum = foldl([](value x, int acc) { return as_num_int(x) + acc; }, 0, lst);
+    int sum = foldl([](value x, int acc) { return x.as_int() + acc; }, 0, lst);
     TEST(sum == 15, "foldl sum");
 
     // foldr (string concatenation)
     value strs = list("a", "b", "c");
     std::string concat =
-        foldr([](value x, std::string acc) { return std::string{as_string_view(x)} + acc; }, std::string(""), strs);
+        foldr([](value x, std::string acc) { return std::string{x.as_string_view()} + acc; }, std::string(""), strs);
     TEST(concat == "abc",
          "foldr string concatenation"); // foldr typically processes from right: "a" + ("b" + ("c" + "")) = "abc"
 
     // build_list
     value squares = build_list(5, [](size_t i) { return make_value(int(i * i)); });
     TEST(length(squares) == 5, "build_list length");
-    TEST(as_num_int(nth(squares, 2)) == 4, "build_list value");
+    TEST(nth(squares, 2).as_int() == 4, "build_list value");
 }
 
 void test_predicates() {
@@ -249,15 +249,15 @@ void test_assoc_and_member() {
 
     value found = assoc(make_value("b"), alist);
     TEST(!is_nil(found), "assoc found");
-    TEST(as_num_int(cdr(found)) == 2, "assoc value");
+    TEST(cdr(found).as_int() == 2, "assoc value");
 
     value not_found = assoc(make_value("x"), alist);
     TEST(is_nil(not_found), "assoc not found");
 
     // member (by value)
-    TEST(member(make_value(2), alist, [](value x, value y) { return as_num_int(cdr(x)) == as_num_int(y); }),
+    TEST(member(make_value(2), alist, [](value x, value y) { return cdr(x).as_int() == y.as_int(); }),
          "member by custom predicate");
-    TEST(!member(make_value(10), alist, [](value x, value y) { return as_num_int(cdr(x)) == as_num_int(y); }),
+    TEST(!member(make_value(10), alist, [](value x, value y) { return cdr(x).as_int() == y.as_int(); }),
          "member not found");
 
     // member (default equality)
@@ -270,7 +270,7 @@ void test_assoc_and_member() {
     TEST(idx.has_value() && *idx == 2, "index_of found");
     idx = index_of(lst, make_value(10));
     TEST(!idx.has_value(), "index_of not found");
-    idx = index_of(lst, [](value x) { return as_num_int(x) % 2 == 0; });
+    idx = index_of(lst, [](value x) { return x.as_int() % 2 == 0; });
     TEST(idx.has_value() && *idx == 1, "index_of predicate");
 }
 
@@ -286,14 +286,14 @@ void test_unsafe_functions_and_mutators() {
     TEST(unwrap_string_view(str) == "hello", "unwrap_string_view");
 
     // unwrap_car/cdr
-    TEST(as_num_int(unwrap_car(pair)) == 10, "unwrap_car");
-    TEST(as_num_int(unwrap_cdr(pair)) == 20, "unwrap_cdr");
+    TEST(unwrap_car(pair).as_int() == 10, "unwrap_car");
+    TEST(unwrap_cdr(pair).as_int() == 20, "unwrap_cdr");
 
     // mutators
     unwrap_setcar(pair, make_value(99));
     unwrap_setcdr(pair, make_value(100));
-    TEST(as_num_int(unwrap_car(pair)) == 99, "unwrap_setcar");
-    TEST(as_num_int(unwrap_cdr(pair)) == 100, "unwrap_setcdr");
+    TEST(unwrap_car(pair).as_int() == 99, "unwrap_setcar");
+    TEST(unwrap_cdr(pair).as_int() == 100, "unwrap_setcdr");
 }
 
 void test_heterogeneous_and_iteration() {
@@ -328,40 +328,40 @@ void test_map_filter_numeric() {
     // Filter even numbers, then square them
     auto even_squares = map(
         [](value x) {
-            int n = as_num_int(x);
+            int n = x.as_int();
             return make_value(n * n);
         },
         filter(is_even, nums));
 
     TEST(length(even_squares) == 5, "even squares count");
-    TEST(as_num_int(first(even_squares)) == 4, "first even square (2^2)");
-    TEST(as_num_int(fifth(even_squares)) == 100, "last even square (10^2)");
+    TEST(first(even_squares).as_int() == 4, "first even square (2^2)");
+    TEST(fifth(even_squares).as_int() == 100, "last even square (10^2)");
 
     // Filter numbers divisible by 3, then compute cubes
     auto cubes_of_threes = map(
         [](value x) {
-            int n = as_num_int(x);
+            int n = x.as_int();
             return make_value(n * n * n);
         },
-        filter([](value x) { return as_num_int(x) % 3 == 0; }, nums));
+        filter([](value x) { return x.as_int() % 3 == 0; }, nums));
 
     TEST(length(cubes_of_threes) == 3, "cubes of multiples of 3 count");
-    TEST(as_num_int(first(cubes_of_threes)) == 27, "3^3");
-    TEST(as_num_int(second(cubes_of_threes)) == 216, "6^3");
-    TEST(as_num_int(third(cubes_of_threes)) == 729, "9^3");
+    TEST(first(cubes_of_threes).as_int() == 27, "3^3");
+    TEST(second(cubes_of_threes).as_int() == 216, "6^3");
+    TEST(third(cubes_of_threes).as_int() == 729, "9^3");
 
     // Use map with two lists: pairwise sum
     value list_a = list(1, 2, 3);
     value list_b = list(10, 20, 30);
-    auto sum_lists = map([](value a, value b) { return make_value(as_num_int(a) + as_num_int(b)); }, list_a, list_b);
+    auto sum_lists = map([](value a, value b) { return make_value(a.as_int() + b.as_int()); }, list_a, list_b);
     TEST(length(sum_lists) == 3, "pairwise sum length");
-    TEST(as_num_int(first(sum_lists)) == 11, "first sum");
-    TEST(as_num_int(second(sum_lists)) == 22, "second sum");
-    TEST(as_num_int(third(sum_lists)) == 33, "third sum");
+    TEST(first(sum_lists).as_int() == 11, "first sum");
+    TEST(second(sum_lists).as_int() == 22, "second sum");
+    TEST(third(sum_lists).as_int() == 33, "third sum");
 
     // Filter and fold: sum of squares of odd numbers
     int sum_squares_odds =
-        foldl([](value x, int acc) { return acc + as_num_int(x) * as_num_int(x); }, 0, filter(is_odd, nums));
+        foldl([](value x, int acc) { return acc + x.as_int() * x.as_int(); }, 0, filter(is_odd, nums));
     TEST(sum_squares_odds == 1 + 9 + 25 + 49 + 81, "sum squares of odds"); // 165
 }
 
@@ -373,25 +373,25 @@ void test_map_filter_heterogeneous() {
     // Filter only numbers (integers and floats)
     auto numbers_only = filter([](value x) { return is_num(x); }, mixed);
     TEST(length(numbers_only) == 3, "number count"); // 42, 3.14, 99
-    TEST(as_num_int(first(numbers_only)) == 42, "first number");
-    TEST(as_num_f64(second(numbers_only)) == 3.14, "second number (double)");
-    TEST(as_num_int(third(numbers_only)) == 99, "third number");
+    TEST(first(numbers_only).as_int() == 42, "first number");
+    TEST(second(numbers_only).as_f64() == 3.14, "second number (double)");
+    TEST(third(numbers_only).as_int() == 99, "third number");
 
     // Filter only strings
     auto strings_only = filter(is_string, mixed);
     TEST(length(strings_only) == 2, "string count");
-    TEST(as_string_view(first(strings_only)) == "hello", "first string");
-    TEST(as_string_view(second(strings_only)) == "world", "second string");
+    TEST(first(strings_only).as_string_view() == "hello", "first string");
+    TEST(second(strings_only).as_string_view() == "world", "second string");
 
     auto to_string_repr = [](value x) -> std::string {
         if (is_num(x)) {
-            double d = as_num_f64(x);
+            double d = x.as_f64();
             // simple formatting, could use std::to_string
             char buf[64];
             snprintf(buf, sizeof(buf), "%g", d);
             return buf;
         } else if (is_string(x)) {
-            return std::string("\"") + std::string(as_string_view(x)) + "\"";
+            return std::string("\"") + std::string(x.as_string_view()) + "\"";
         } else if (is_true(x)) {
             return "true";
         } else if (is_nil(x)) {
@@ -407,33 +407,33 @@ void test_map_filter_heterogeneous() {
 
     TEST(length(string_reprs) == 8, "string reprs length");
     // Check first few
-    TEST(as_string_view(first(string_reprs)) == "42", "repr of 42");
-    TEST(as_string_view(second(string_reprs)) == "3.14", "repr of 3.14");
-    TEST(as_string_view(third(string_reprs)) == "\"hello\"", "repr of hello");
-    TEST(as_string_view(fourth(string_reprs)) == "true", "repr of true");
-    TEST(as_string_view(fifth(string_reprs)) == "nil", "repr of nil");
-    TEST(as_string_view(sixth(string_reprs)) == "(list)", "repr of nested list");
-    TEST(as_string_view(seventh(string_reprs)) == "\"world\"", "repr of world");
-    TEST(as_string_view(eighth(string_reprs)) == "99", "repr of 99");
+    TEST(first(string_reprs).as_string_view() == "42", "repr of 42");
+    TEST(second(string_reprs).as_string_view() == "3.14", "repr of 3.14");
+    TEST(third(string_reprs).as_string_view() == "\"hello\"", "repr of hello");
+    TEST(fourth(string_reprs).as_string_view() == "true", "repr of true");
+    TEST(fifth(string_reprs).as_string_view() == "nil", "repr of nil");
+    TEST(sixth(string_reprs).as_string_view() == "(list)", "repr of nested list");
+    TEST(seventh(string_reprs).as_string_view() == "\"world\"", "repr of world");
+    TEST(eighth(string_reprs).as_string_view() == "99", "repr of 99");
 
     // Filter and map together: from mixed list, get numbers, double them, return as list of numbers
-    auto doubled_numbers = map([](value x) { return make_value(as_num_f64(x) * 2); }, filter(is_num, mixed));
+    auto doubled_numbers = map([](value x) { return make_value(x.as_f64() * 2); }, filter(is_num, mixed));
     TEST(length(doubled_numbers) == 3, "doubled numbers count");
-    TEST(as_num_f64(first(doubled_numbers)) == 84.0, "42*2");
-    TEST(as_num_f64(second(doubled_numbers)) == 6.28, "3.14*2");
-    TEST(as_num_f64(third(doubled_numbers)) == 198.0, "99*2");
+    TEST(first(doubled_numbers).as_f64() == 84.0, "42*2");
+    TEST(second(doubled_numbers).as_f64() == 6.28, "3.14*2");
+    TEST(third(doubled_numbers).as_f64() == 198.0, "99*2");
 
     // Filter strings that contain 'o' and map to uppercase (simulate)
     auto filtered_uppercase = map(
         [](value x) {
-            std::string s(as_string_view(x));
+            std::string s(x.as_string_view());
             for (char &c : s)
                 c = toupper(c);
             return new_stringz(s.c_str());
         },
         filter(
             [](value x) {
-                std::string_view sv = as_string_view(x);
+                std::string_view sv = x.as_string_view();
                 return sv.find('o') != std::string_view::npos;
             },
             filter(is_string, mixed)));
@@ -461,20 +461,20 @@ void test_invalid_uses() {
     value improper_list = cons(make_value(1), cons(make_value(2), make_value(3))); // (1 2 . 3)
 
     // --- Type conversion functions ---
-    TEST_THROWS(as_string_view(num_val), "as_string_view on number");
-    TEST_THROWS(as_string_view(cons_val), "as_string_view on cons");
-    TEST_THROWS(as_string_view(nil_val), "as_string_view on nil");
-    TEST_THROWS(as_string_view(bool_val), "as_string_view on boolean");
+    TEST_THROWS(num_val.as_string_view(), "as_string_view on number");
+    TEST_THROWS(cons_val.as_string_view(), "as_string_view on cons");
+    TEST_THROWS(nil_val.as_string_view(), "as_string_view on nil");
+    TEST_THROWS(bool_val.as_string_view(), "as_string_view on boolean");
 
-    TEST_THROWS(as_num_f64(str_val), "as_num_f64 on string");
-    TEST_THROWS(as_num_f64(cons_val), "as_num_f64 on cons");
-    TEST_THROWS(as_num_f64(nil_val), "as_num_f64 on nil");
-    TEST_THROWS(as_num_f64(bool_val), "as_num_f64 on boolean");
+    TEST_THROWS(str_val.as_f64(), "as_num_f64 on string");
+    TEST_THROWS(cons_val.as_f64(), "as_num_f64 on cons");
+    TEST_THROWS(nil_val.as_f64(), "as_num_f64 on nil");
+    TEST_THROWS(bool_val.as_f64(), "as_num_f64 on boolean");
 
-    TEST_THROWS(as_num_int(str_val), "as_num_int on string");
-    TEST_THROWS(as_num_int(cons_val), "as_num_int on cons");
-    TEST_THROWS(as_num_int(nil_val), "as_num_int on nil");
-    TEST_THROWS(as_num_int(bool_val), "as_num_int on boolean");
+    TEST_THROWS(str_val.as_int(), "as_num_int on string");
+    TEST_THROWS(cons_val.as_int(), "as_num_int on cons");
+    TEST_THROWS(nil_val.as_int(), "as_num_int on nil");
+    TEST_THROWS(bool_val.as_int(), "as_num_int on boolean");
 
     // --- Cons/car/cdr accessors ---
     TEST_THROWS(car(num_val), "car on number");
@@ -655,73 +655,69 @@ void test_arithmetic_operators() {
     // --- value + value ---
     value sum1 = i1 + i2;
     TEST(is_num(sum1), "int+int result is num");
-    TEST(as_num_int(sum1) == 13, "int+int value");
+    TEST(sum1.as_int() == 13, "int+int value");
 
     value sum2 = d1 + d2;
     TEST(is_num(sum2), "double+double result is num");
-    TEST(as_num_f64(sum2) == 4.0, "double+double value");
+    TEST(sum2.as_f64() == 4.0, "double+double value");
 
     value sum3 = i1 + d1;
     TEST(is_num(sum3), "int+double result is num");
-    TEST(as_num_f64(sum3) == 12.5, "int+double value");
+    TEST(sum3.as_f64() == 12.5, "int+double value");
 
     // --- value + double ---
     value sum4 = i1 + 5.5;
     TEST(is_num(sum4), "value+double result is num");
-    TEST(as_num_f64(sum4) == 15.5, "value+double value");
+    TEST(sum4.as_f64() == 15.5, "value+double value");
 
     // --- value - value ---
     value diff1 = i1 - i2;
-    TEST(as_num_int(diff1) == 7, "int-int");
+    TEST(diff1.as_int() == 7, "int-int");
 
     value diff2 = d1 - d2;
-    TEST(as_num_f64(diff2) == 1.0, "double-double");
+    TEST(diff2.as_f64() == 1.0, "double-double");
 
     value diff3 = i1 - d2;
-    TEST(as_num_f64(diff3) == 8.5, "int-double");
+    TEST(diff3.as_f64() == 8.5, "int-double");
 
     // --- value - double ---
     value diff4 = i1 - 2.5;
-    TEST(as_num_f64(diff4) == 7.5, "value-double");
+    TEST(diff4.as_f64() == 7.5, "value-double");
 
     // --- value * value ---
     value prod1 = i1 * i2;
-    TEST(as_num_int(prod1) == 30, "int*int");
+    TEST(prod1.as_int() == 30, "int*int");
 
     value prod2 = d1 * d2;
-    TEST(as_num_f64(prod2) == 3.75, "double*double");
+    TEST(prod2.as_f64() == 3.75, "double*double");
 
     value prod3 = i1 * d2;
-    TEST(as_num_f64(prod3) == 15.0, "int*double");
+    TEST(prod3.as_f64() == 15.0, "int*double");
 
     // --- value * double ---
     value prod4 = i1 * 1.5;
-    TEST(as_num_f64(prod4) == 15.0, "value*double");
+    TEST(prod4.as_f64() == 15.0, "value*double");
 
     // --- value / value ---
     value quot1 = i1 / i2;
-    // integer division? Depending on implementation, could be 3 (if integer division) or 3.333...
-    // The API returns value, could be integer or double? Since i1/i2 both ints, maybe integer division? Not specified.
-    // We'll test both ints and ensure result is numeric.
     TEST(is_num(quot1), "int/int result num");
 
-    // To avoid ambiguity, test with doubles:
     value quot2 = d1 / d2;
-    TEST(as_num_f64(quot2) == 2.5 / 1.5, "double/double"); // approx 1.6666667
+    TEST(quot2.as_f64() == 2.5 / 1.5, "double/double"); // approx 1.6666667
 
     value quot3 = i1 / d2;
-    TEST(as_num_f64(quot3) == 10.0 / 1.5, "int/double");
+    TEST(quot3.as_f64() == 10.0 / 1.5, "int/double");
 
     // --- value / double ---
     value quot4 = i1 / 2.0;
-    TEST(as_num_f64(quot4) == 5.0, "value/double");
+    TEST(quot4.as_f64() == 5.0, "value/double");
 
     // --- Test with negative numbers ---
     value neg = make_value(-5);
     value pos = make_value(3);
-    TEST(as_num_int(neg + pos) == -2, "neg+pos");
-    TEST(as_num_int(neg - pos) == -8, "neg-pos");
-    TEST(as_num_int(neg * pos) == -15, "neg*pos");
+    TEST((neg + pos).as_int() == -2, "neg+pos");
+    TEST((neg - pos).as_int() == -8, "neg-pos");
+    TEST((neg * pos).as_int() == -15, "neg*pos");
     TEST(as_num_f64(neg / make_value(2.0)) == -2.5, "neg/pos double");
 
     // --- Invalid uses (should throw) ---
@@ -749,13 +745,11 @@ void test_arithmetic_operators() {
     TEST_THROWS(nilv + nilv, "nil+nil");
 
     // Check that original values are unchanged
-    TEST(as_num_int(i1) == 10, "original i1 unchanged");
-    TEST(as_num_int(i2) == 3, "original i2 unchanged");
-    TEST(as_num_f64(d1) == 2.5, "original d1 unchanged");
-    TEST(as_num_f64(d2) == 1.5, "original d2 unchanged");
+    TEST(i1.as_int() == 10, "original i1 unchanged");
+    TEST(i2.as_int() == 3, "original i2 unchanged");
+    TEST(d1.as_f64() == 2.5, "original d1 unchanged");
+    TEST(d2.as_f64() == 1.5, "original d2 unchanged");
 }
-#include <optional>
-#include <vector>
 
 // ===== Complex types for serialization test =====
 struct Person {
@@ -790,11 +784,11 @@ template <> struct headerlisp::from_list<Person> {
     Person operator()(value lst) {
         auto [name, addr, age, email] = headerlisp::first_4(lst);
         Person p;
-        p.name = headerlisp::as_string_view(name);
-        p.address = headerlisp::as_string_view(addr);
-        p.age = headerlisp::as_num_int(age);
+        p.name = name.as_string_view();
+        p.address = addr.as_string_view();
+        p.age = age.as_int();
         if (!headerlisp::is_nil(email)) {
-            p.email = std::string(headerlisp::as_string_view(email));
+            p.email = std::string(email.as_string_view());
         }
         return p;
     }
@@ -803,23 +797,13 @@ template <> struct headerlisp::from_list<Person> {
 // std::vector<T>
 namespace headerlisp {
 template <typename T> struct to_list<std::vector<T>> {
-    auto operator()(const std::vector<T> &vec) {
-        value result = nil;
-        for (auto it = vec.rbegin(); it != vec.rend(); ++it) {
-            result = headerlisp::cons(headerlisp::make_value(*it), result);
-        }
-        return result;
-    }
+    auto operator()(const std::vector<T> &vec) { return list_from_iter(vec.begin(), vec.end()); }
 };
 
 template <typename T> struct from_list<std::vector<T>> {
     std::vector<T> operator()(value lst) {
-        std::vector<T> result;
-        while (!headerlisp::is_nil(lst)) {
-            result.push_back(headerlisp::as<T>(headerlisp::car(lst)));
-            lst = headerlisp::cdr(lst);
-        }
-        return result;
+        auto it = lst.iter().as<T>();
+        return std::vector<T>(it.begin(), it.end());
     }
 };
 } // namespace headerlisp
@@ -833,9 +817,9 @@ template <> struct headerlisp::from_list<Department> {
     Department operator()(value lst) {
         auto [name, head, employees] = headerlisp::first_3(lst);
         Department d;
-        d.name = headerlisp::as_string_view(name);
-        d.head = headerlisp::as<Person>(head);
-        d.employees = headerlisp::as<std::vector<Person>>(employees);
+        d.name = name.as_string_view();
+        d.head = head.as<Person>();
+        d.employees = employees.as<std::vector<Person>>();
         return d;
     }
 };
@@ -849,9 +833,9 @@ template <> struct headerlisp::from_list<Company> {
     Company operator()(value lst) {
         auto [name, founded, depts] = headerlisp::first_3(lst);
         Company c;
-        c.name = headerlisp::as_string_view(name);
-        c.founded = headerlisp::as_num_int(founded);
-        c.departments = headerlisp::as<std::vector<Department>>(depts);
+        c.name = name.as_string_view();
+        c.founded = founded.as_int();
+        c.departments = depts.as<std::vector<Department>>();
         return c;
     }
 };
@@ -992,7 +976,7 @@ struct Div : Node {
 // Recursive s-expression traversal that builds tree of Nodes.
 std::unique_ptr<Node> parse_tree(headerlisp::value it) {
     if (headerlisp::is_num(it)) {
-        return std::make_unique<Num>(headerlisp::as_num_int(it));
+        return std::make_unique<Num>(it.as_int());
     }
 
     // Must be a list
@@ -1005,14 +989,13 @@ std::unique_ptr<Node> parse_tree(headerlisp::value it) {
     if (!headerlisp::is_string(op_val)) {
         throw std::runtime_error("operator must be a symbol (string)");
     }
-    std::string_view op = headerlisp::as_string_view(op_val);
+    std::string_view op = op_val.as_string_view();
 
     // Collect arguments (rest of the list)
     headerlisp::value rest = headerlisp::rest(it);
     std::vector<std::unique_ptr<Node>> args;
-    while (!headerlisp::is_nil(rest)) {
-        args.push_back(parse_tree(headerlisp::first(rest)));
-        rest = headerlisp::rest(rest);
+    for (auto x : rest.iter()) {
+        args.push_back(parse_tree(x));
     }
 
     // Create appropriate node
@@ -1083,10 +1066,8 @@ void test_variable_arity_parser() {
 // Simple custom type for testing from_list conversion
 struct Point {
     int x, y;
-    
-    bool operator==(Point other) const {
-        return x == other.x && y == other.y;
-    }
+
+    bool operator==(Point other) const { return x == other.x && y == other.y; }
 };
 
 template <> struct headerlisp::to_list<Point> {
@@ -1096,7 +1077,7 @@ template <> struct headerlisp::to_list<Point> {
 template <> struct headerlisp::from_list<Point> {
     Point operator()(value lst) {
         auto [x, y] = headerlisp::first_2(lst);
-        return {headerlisp::as_num_int(x), headerlisp::as_num_int(y)};
+        return {x.as<int>(), y.as<int>()};
     }
 };
 
@@ -1137,7 +1118,7 @@ void test_iterators() {
     TEST(lst.size() == 5 && lst.front() == 1 && lst.back() == 5, "list constructor from iterators");
 
     // Test empty list iteration
-    value empty = headerlisp::nil;
+    value empty = nullptr;
     auto empty_range = empty.iter().as<int>();
     TEST(empty_range.begin() == empty_range.end(), "empty list iterators equal");
 
@@ -1173,7 +1154,7 @@ void test_iterators() {
     std::copy(points.iter().as<Point>().begin(), points.iter().as<Point>().end(), std::back_inserter(points2));
     TEST(!!std::equal(points2.begin(), points2.end(), points_vec.begin()), "copy points");
 
-    int fold_sum = headerlisp::foldl([](value x, int acc) { return headerlisp::as_num_int(x) + acc; }, 0, nums);
+    int fold_sum = headerlisp::foldl([](value x, int acc) { return x.as_int() + acc; }, 0, nums);
     TEST(fold_sum == 15, "foldl with iter()");
 }
 
