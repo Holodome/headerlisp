@@ -40,13 +40,13 @@ template <> struct hl::to_list<Calculate> {
 };
 
 template <> struct hl::from_list<SayMyName> {
-    SayMyName operator()(auto lst) {
+    SayMyName operator()(value lst) {
         auto [a, b] = first_2(lst);
         return SayMyName{as_num_int(a), std::string{as_string_view(b)}};
     }
 };
 template <> struct hl::from_list<Calculate> {
-    Calculate operator()(auto lst) { return Calculate{std::string{as_string_view(car(lst))}}; }
+    Calculate operator()(value lst) { return Calculate{std::string{as_string_view(car(lst))}}; }
 };
 
 // Recursive expression evaluation function

@@ -31,12 +31,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <format>
 #include <iterator>
 #include <new>
 #include <optional>
 #include <stddef.h>
 #include <stdint.h>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -120,10 +120,14 @@ using value = value_ns::value;
 class hl_exception : public std::exception {
 public:
     hl_exception() = delete;
-    explicit hl_exception(const char *reason) { snprintf(msg_, sizeof(msg_), "%s", reason); }
-    explicit hl_exception(std::string_view reason) { snprintf(msg_, sizeof(msg_), "%s", reason.data()); }
-    template <typename... Args> explicit hl_exception(std::format_string<Args...> fmt, Args &&...args) {
-        std::format_to_n(msg_, sizeof(msg_), fmt, std::forward<Args>(args)...);
+    explicit hl_exception(std::string_view reason) {
+        snprintf(msg_, sizeof(msg_), "%.*s", (int)reason.size(), reason.data());
+    }
+    __attribute__((format(printf, 2, 3))) explicit hl_exception(const char *reason, ...) {
+        va_list args;
+        va_start(args, reason);
+        vsnprintf(msg_, sizeof(msg_), reason, args);
+        va_end(args);
     }
 
     const char *what() const noexcept override { return msg_; }
@@ -136,22 +140,13 @@ template <typename T> struct to_list {};
 template <typename T> struct from_list {};
 template <typename T> struct list_tag {};
 
-template <typename T>
-concept has_to_list = requires(T a) {
-    { to_list<std::remove_cvref_t<T>>{}(a) } -> std::same_as<value>;
-};
-template <typename T>
-concept has_from_list = requires {
-    { from_list<std::remove_cvref_t<T>>{}(value{}) } -> std::same_as<T>;
-};
-template <typename T>
-concept has_list_tag = requires {
-    { list_tag<std::remove_cvref_t<T>>::tag } -> std::same_as<const std::string_view &>;
-};
+template <typename T, typename = void> struct to_list_concept : std::false_type {};
+template <typename T> struct to_list_concept<T, std::void_t<decltype(sizeof(to_list<T>))>> : std::true_type {};
 
-template <typename T>
-    requires(std::constructible_from<std::string_view, T> && !std::same_as<T, nullptr_t>)
-struct list_tag<T> {
+template <typename T, typename = void> struct from_list_concept : std::false_type {};
+template <typename T> struct from_list_concept<T, std::void_t<decltype(sizeof(from_list<T>))>> : std::true_type {};
+
+template <> struct list_tag<std::string_view> {
     constexpr static inline std::string_view tag = "string";
 };
 template <> struct list_tag<double> {
@@ -161,41 +156,26 @@ template <> struct list_tag<int> {
     constexpr static inline std::string_view tag = "num";
 };
 
-template <typename F, typename U>
-concept fold_function = std::is_invocable_r_v<U, F, value, U>;
-
-template <typename F, typename U>
-concept fold2_function = std::is_invocable_r_v<U, F, value, value, U>;
-
-template <typename F>
-concept map_function = std::is_invocable_r_v<value, F, value>;
-
-template <typename F>
-concept map2_function = std::is_invocable_r_v<value, F, value, value>;
-
-template <typename F>
-concept predicate_function = std::is_invocable_r_v<bool, F, value>;
-
 //
 // Value constructors
 //
 
 // There are more overloads for these functions below
 inline value make_value(value x) noexcept;
-template <has_list_tag T> value make_tagged_value(T &&t);
+template <typename T> value make_tagged_value(T &&t);
 
 inline value new_string(const char *str, size_t length);
 inline value new_stringz(const char *str);
 inline value cons(value car, value cdr);
 
 template <typename... Args> value list(Args &&...args);
-template <has_list_tag... Args> value tagged_list(Args &&...args);
+template <typename... Args> value tagged_list(Args &&...args);
 
 //
 // Type checkers
 //
-inline std::string_view value_kind_str(value_kind kind) noexcept;
-inline std::string_view value_kind_str(value x) noexcept;
+inline const char *value_kind_str(value_kind kind) noexcept;
+inline const char *value_kind_str(value x) noexcept;
 inline value_kind get_value_kind(value x) noexcept;
 inline bool is_num(value x) noexcept;
 inline bool is_obj(value x) noexcept;
@@ -352,31 +332,30 @@ inline value reverse(value lst);
 
 inline value append(value a, value b);
 inline value append(value a, value b, value c);
-value map(map_function auto f, value lst);
-value map(map2_function auto f, value lst1, value lst2);
-bool all(predicate_function auto f, value lst);
-bool any(predicate_function auto f, value lst);
-template <typename U> U foldl(fold_function<U> auto f, U init, value lst);
-template <typename U> U foldl(fold2_function<U> auto f, U init, value lst1, value lst2);
-template <typename U> U foldr(fold_function<U> auto f, U init, value lst);
-template <typename U> U foldr(fold2_function<U> auto f, U init, value lst1, value lst2);
-value filter(predicate_function auto f, value lst);
-value filter_not(predicate_function auto f, value lst);
-value remove(value lst, predicate_function auto f);
+template <typename Fn> value map(Fn f, value lst);
+template <typename Fn> value map(Fn f, value lst1, value lst2);
+template <typename Fn> bool all(Fn f, value lst);
+template <typename Fn> bool any(Fn f, value lst);
+template <typename U, typename Fn> U foldl(Fn f, U init, value lst);
+template <typename U, typename Fn> U foldl(Fn f, U init, value lst1, value lst2);
+template <typename U, typename Fn> U foldr(Fn f, U init, value lst);
+template <typename U, typename Fn> U foldr(Fn f, U init, value lst1, value lst2);
+template <typename Fn> value filter(Fn f, value lst);
+template <typename Fn> value filter_not(Fn f, value lst);
+template <typename Fn> value remove(value lst, Fn f);
 inline value remove(value x, value lst);
 inline value cartesian_product(value lst1, value lst2);
 inline value cartesian_product(value lst1, value lst2, value lst3);
 
 inline value assoc(value v, value lst);
-std::optional<size_t> index_of(value lst, predicate_function auto f);
+template <typename Fn> value remove(value lst, Fn f);
+template <typename Fn> std::optional<size_t> index_of(value lst, Fn f);
 inline std::optional<size_t> index_of(value lst, value v);
-bool member(value v, value lst, predicate_function auto f);
+template <typename Fn> bool member(value v, value lst, Fn f);
 inline bool member(value v, value lst);
 inline value range(size_t end);
 inline value range(double start, double end, double step = 1.0);
-template <typename F>
-    requires std::is_invocable_r_v<value, F, size_t>
-value build_list(size_t n, F f);
+template <typename Fn> value build_list(size_t n, Fn f);
 
 //
 // Predicates
@@ -419,9 +398,7 @@ inline std::string print(value x);
 
 namespace internal {
 
-template <typename U, typename T, typename F>
-    requires std::is_invocable_r_v<std::optional<U>, F, T>
-std::optional<U> flat_map(std::optional<T> x, F f) {
+template <typename U, typename T, typename F> std::optional<U> flat_map(std::optional<T> x, F f) {
     if (x.has_value()) {
         return f(*x);
     }
@@ -592,25 +569,26 @@ constexpr value tru = internal::nan_box_singleton(value_kind::tru);
 // Use concepts with same_as<T> here instead of concrete type arguments to avoid implicit conversions.
 // They are very hard to work around.
 inline value make_value(value x) noexcept { return x; }
-inline value make_value(std::same_as<bool> auto x) noexcept { return x ? tru : nil; }
-inline value make_value(std::same_as<double> auto x) noexcept {
+inline value make_value(bool x) noexcept { return x ? tru : nil; }
+inline value make_value(double x) noexcept {
     uint64_t u64;
     memcpy(&u64, &x, sizeof(u64));
     return value::make(u64);
 }
-inline value make_value(std::same_as<int> auto x) noexcept { return make_value((double)x); }
-inline value make_value(std::same_as<size_t> auto x) noexcept { return make_value((double)x); }
-inline value make_value(std::same_as<nullptr_t> auto) noexcept { return nil; }
-template <typename T>
-    requires(std::constructible_from<std::string_view, T> && !std::is_same_v<T, nullptr_t>)
-value make_value(T s) {
+inline value make_value(int x) noexcept { return make_value((double)x); }
+inline value make_value(size_t x) noexcept { return make_value((double)x); }
+inline value make_value(nullptr_t) noexcept { return nil; }
+inline value make_value(std::string_view s) {
     std::string_view sv{s};
     return new_string(sv.begin(), sv.length());
 }
-template <has_to_list T> value make_value(T x) { return to_list<T>{}(x); }
-template <typename T> value make_value(T) {
-    static_assert(!sizeof(T),
-                  "'make_value' not implemented for this type. Please use existing overloads to avoid ambiguity.");
+inline value make_value(const char *s) {
+    std::string_view sv{s};
+    return new_string(sv.begin(), sv.length());
+}
+inline value make_value(const std::string &s) { return make_value(std::string_view{s}); }
+template <typename T, typename = std::enable_if<to_list_concept<T>::value>> value make_value(T x) {
+    return to_list<T>{}(x);
 }
 
 template <typename... Args> value list(Args &&...args) {
@@ -620,20 +598,20 @@ template <typename... Args> value list(Args &&...args) {
     return h;
 }
 
-template <has_list_tag T> value make_tagged_value(T &&t) {
-    std::string_view tag = list_tag<std::remove_cvref_t<T>>::tag;
+template <typename T> value make_tagged_value(T &&t) {
+    std::string_view tag = list_tag<std::decay_t<T>>::tag;
     value v = make_value(std::forward<T>(t));
     return cons(make_value(tag), v);
 }
 
-template <has_list_tag... Args> value tagged_list(Args &&...args) {
+template <typename... Args> value tagged_list(Args &&...args) {
     value h = nil;
     value t = nil;
     (add_last(h, t, make_tagged_value(std::forward<Args>(args))), ...);
     return h;
 }
 
-constexpr value::value() { this->u64_ = nil.u64_; }
+constexpr value::value() : u64_(nil.u64_) {}
 
 inline value cons(value car, value cdr) { return internal::new_cons(&internal::g_ctx, car, cdr); }
 inline value new_string(const char *value, size_t length) {
@@ -652,23 +630,24 @@ public:
     using reference = value &;
     using iterator_category = std::forward_iterator_tag;
 
-    value_iter() = delete;
-    value_iter(const value_iter &) noexcept = default;
-    value_iter(value_iter &&) noexcept = default;
-    value_iter &operator=(const value_iter &) noexcept = default;
-    value_iter &operator=(value_iter &&) noexcept = default;
+    constexpr value_iter() = delete;
+    constexpr value_iter(const value_iter &) noexcept = default;
+    constexpr value_iter(value_iter &&) noexcept = default;
+    constexpr value_iter &operator=(const value_iter &) noexcept = default;
+    constexpr value_iter &operator=(value_iter &&) noexcept = default;
 
-    explicit value_iter(value x) noexcept : current_(x) {}
+    explicit constexpr value_iter(value x) noexcept : current_(x) {}
 
     reference operator*() { return car(current_); }
-    bool operator==(value_iter other) noexcept { return current_.internal() == other.current_.internal(); }
+    constexpr bool operator==(value_iter other) noexcept { return current_.internal() == other.current_.internal(); }
+    constexpr bool operator!=(value_iter other) noexcept { return !(*this == other); }
 
-    value_iter operator++(int) const {
+    constexpr value_iter operator++(int) const noexcept {
         value_iter tmp = *this;
         ++tmp;
         return tmp;
     }
-    value_iter &operator++() {
+    constexpr value_iter &operator++() noexcept {
         current_ = cdr(current_);
         return *this;
     }
@@ -677,7 +656,7 @@ private:
     value current_;
 };
 
-template <has_from_list T> class deserializing_value_iter {
+template <typename T, typename = std::enable_if<to_list_concept<T>::value>> class deserializing_value_iter {
 public:
     using difference_type = ptrdiff_t;
     using value_type = T;
@@ -697,6 +676,7 @@ public:
     bool operator==(deserializing_value_iter other) noexcept {
         return current_.internal() == other.current_.internal();
     }
+    bool operator!=(deserializing_value_iter other) noexcept { return !(*this == other); }
 
     deserializing_value_iter operator++(int) const {
         deserializing_value_iter tmp = *this;
@@ -730,12 +710,12 @@ public:
     explicit tagged_value(value data) : tag_(as_string_view(car(data))), data_(cdr(data)) {}
     tagged_value(std::string_view tag, value data) noexcept : tag_(tag), data_(data) {}
 
-    template <has_from_list T> T get() const {
+    template <typename T> T get() const {
         assert(is<T>());
         return from_list<T>{}(data_);
     }
 
-    template <has_list_tag T> bool is() const noexcept { return tag_ == list_tag<T>::tag; }
+    template <typename T> bool is() const noexcept { return tag_ == list_tag<T>::tag; }
     bool is_num() const noexcept { return is<double>(); }
     bool is_string() const noexcept { return is<std::string_view>(); }
 
@@ -763,9 +743,10 @@ public:
     explicit deserializing_tagged_value_iter(value x) : current_(x) { update_current_value(); }
 
     reference operator*() noexcept { return current_element_; }
-    bool operator==(const deserializing_tagged_value_iter &other) const noexcept {
+    bool operator==(const deserializing_tagged_value_iter other) const noexcept {
         return current_.internal() == other.current_.internal();
     }
+    bool operator!=(const deserializing_tagged_value_iter other) const noexcept { return !(*this == other); }
 
     deserializing_tagged_value_iter operator++(int) const {
         deserializing_tagged_value_iter tmp = *this;
@@ -791,7 +772,7 @@ private:
     value_type current_element_;
 };
 
-template <has_from_list T> class deserializing_value_range {
+template <typename T, typename = std::enable_if<from_list_concept<T>::value>> class deserializing_value_range {
 public:
     deserializing_value_range() = delete;
     deserializing_value_range(const deserializing_value_range &) noexcept = default;
@@ -838,7 +819,7 @@ public:
     value_iter begin() const noexcept { return value_iter{start_}; }
     value_iter end() const noexcept { return value_iter{nil}; }
 
-    template <has_from_list T> deserializing_value_range<T> as() const noexcept {
+    template <typename T> deserializing_value_range<T> as() const noexcept {
         return deserializing_value_range<T>(start_);
     }
     deserializing_tagged_value_range tagged() const noexcept { return deserializing_tagged_value_range(start_); }
@@ -853,7 +834,7 @@ inline value_range value::iter() const noexcept { return value_range(*this); }
 // Type checkers
 //
 
-inline std::string_view value_kind_str(value_kind kind) noexcept {
+inline const char *value_kind_str(value_kind kind) noexcept {
     switch (kind) {
     case value_kind::num: return "num";
     case value_kind::nil: return "nil";
@@ -863,7 +844,7 @@ inline std::string_view value_kind_str(value_kind kind) noexcept {
     }
     __builtin_unreachable();
 }
-inline std::string_view value_kind_str(value x) noexcept { return value_kind_str(get_value_kind(x)); }
+inline const char *value_kind_str(value x) noexcept { return value_kind_str(get_value_kind(x)); }
 
 inline value_kind get_value_kind(value x) noexcept {
     return is_obj(x) ? internal::nan_unbox_ptr(x)->kind : (value_kind)internal::nan_unbox_singleton(x);
@@ -913,28 +894,28 @@ inline void unwrap_setcdr(value c, value cdr) noexcept { internal::unwrap_cons(c
 
 inline std::string_view as_string_view(value x) {
     if (!is_string(x))
-        throw hl_exception("called 'as_string_view()' on non-string {}", value_kind_str(x));
+        throw hl_exception("called 'as_string_view()' on non-string %s", value_kind_str(x));
     return unwrap_string_view(x);
 }
 inline double as_num_f64(value x) {
     if (!is_num(x))
-        throw hl_exception("called 'num_dbl() on non-number value {}", value_kind_str(x));
+        throw hl_exception("called 'num_dbl() on non-number value %s", value_kind_str(x));
     return unwrap_f64(x);
 }
 inline int as_num_int(value x) { return (int)as_num_f64(x); }
 inline value &car(value x) {
     if (!is_cons(x))
-        throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
+        throw hl_exception("called 'car()' on non-cons value %s", value_kind_str(x));
     return unwrap_car(x);
 }
 inline value &cdr(value x) {
     if (!is_cons(x))
-        throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
+        throw hl_exception("called 'car()' on non-cons value %s", value_kind_str(x));
     return unwrap_cdr(x);
 }
 inline cons_unapply_result unapply_cons(value x) {
     if (!is_cons(x))
-        throw hl_exception("called 'car()' on non-cons value {}", value_kind_str(x));
+        throw hl_exception("called 'car()' on non-cons value %s", value_kind_str(x));
     return {unwrap_car(x), unwrap_cdr(x)};
 }
 
@@ -1145,7 +1126,7 @@ inline value append(value a, value b, value c) {
     }
     return result;
 }
-value map(map_function auto f, value lst) {
+template <typename Fn> value map(Fn f, value lst) {
     auto new_lst = nil;
     auto new_lst_end = nil;
     for (auto it : lst.iter()) {
@@ -1153,7 +1134,7 @@ value map(map_function auto f, value lst) {
     }
     return new_lst;
 }
-value map(map2_function auto f, value lst1, value lst2) {
+template <typename Fn> value map(Fn f, value lst1, value lst2) {
     auto new_lst = nil;
     auto new_lst_end = nil;
     for (; is_cons(lst1) && is_cons(lst2); lst1 = cdr(lst1), lst2 = cdr(lst2)) {
@@ -1163,7 +1144,7 @@ value map(map2_function auto f, value lst1, value lst2) {
     }
     return new_lst;
 }
-bool all(predicate_function auto f, value lst) {
+template <typename Fn> bool all(Fn f, value lst) {
     for (auto it : lst.iter()) {
         if (!f(it)) {
             return false;
@@ -1171,7 +1152,7 @@ bool all(predicate_function auto f, value lst) {
     }
     return true;
 }
-bool any(predicate_function auto f, value lst) {
+template <typename Fn> bool any(Fn f, value lst) {
     for (auto it : lst.iter()) {
         if (f(it)) {
             return true;
@@ -1180,14 +1161,14 @@ bool any(predicate_function auto f, value lst) {
     return false;
 }
 
-template <typename U> U foldl(fold_function<U> auto f, U init, value lst) {
+template <typename U, typename Fn> U foldl(Fn f, U init, value lst) {
     U result{std::move(init)};
     for (auto it : lst.iter()) {
         result = f(it, result);
     }
     return result;
 }
-template <typename U> U foldl(fold2_function<U> auto f, U init, value lst1, value lst2) {
+template <typename U, typename Fn> U foldl(Fn f, U init, value lst1, value lst2) {
     U result{std::move(init)};
     for (; is_cons(lst1) && is_cons(lst2); lst1 = cdr(lst1), lst2 = cdr(lst2)) {
         auto it1 = car(lst1);
@@ -1196,21 +1177,21 @@ template <typename U> U foldl(fold2_function<U> auto f, U init, value lst1, valu
     }
     return result;
 }
-template <typename U> U foldr(fold_function<U> auto f, U init, value lst) {
+template <typename U, typename Fn> U foldr(Fn f, U init, value lst) {
     if (is_nil(lst)) {
         return init;
     }
     auto [a, b] = unapply_cons(lst);
     return f(a, foldr(f, init, b));
 }
-template <typename U> U foldr(fold2_function<U> auto f, U init, value lst1, value lst2) {
+template <typename U, typename Fn> U foldr(Fn f, U init, value lst1, value lst2) {
     if (is_nil(lst1) || is_nil(lst2)) {
         return init;
     }
     return f(car(lst1), car(lst2), foldr(f, init, cdr(lst1), cdr(lst2)));
 }
 
-value filter(predicate_function auto f, value lst) {
+template <typename Fn> value filter(Fn f, value lst) {
     value new_lst = nil;
     value new_lst_end = nil;
     for (auto it : lst.iter()) {
@@ -1221,11 +1202,11 @@ value filter(predicate_function auto f, value lst) {
     return new_lst;
 }
 
-value filter_not(predicate_function auto f, value lst) {
+template <typename Fn> value filter_not(Fn f, value lst) {
     return filter([&f](auto x) { return !f(x); }, lst);
 }
 
-value remove(value lst, predicate_function auto f) {
+template <typename Fn> value remove(value lst, Fn f) {
     value new_lst = nil;
     value new_lst_end = nil;
     for (auto it : lst.iter()) {
@@ -1270,7 +1251,7 @@ inline value assoc(value v, value lst) {
     return nil;
 }
 
-std::optional<size_t> index_of(value lst, predicate_function auto f) {
+template <typename Fn> std::optional<size_t> index_of(value lst, Fn f) {
     size_t idx = 0;
     for (auto it : lst.iter()) {
         if (f(it)) {
@@ -1300,9 +1281,7 @@ inline value range(double start, double end, double step) {
     }
     return h;
 }
-template <typename F>
-    requires std::is_invocable_r_v<value, F, size_t>
-value build_list(size_t n, F f) {
+template <typename F> value build_list(size_t n, F f) {
     value h = nil, t = nil;
     for (size_t i = 0; i < n; ++i) {
         add_last(h, t, make_value(f(i)));
@@ -1316,7 +1295,7 @@ value build_list(size_t n, F f) {
 
 inline bool is_even(value x) {
     if (!is_num(x))
-        throw hl_exception("'is_even' called on non-number {}", value_kind_str(x));
+        throw hl_exception("'is_even' called on non-number %s", value_kind_str(x));
     double d = unwrap_f64(x);
     if ((double)(int)d != d)
         return false;
@@ -1324,7 +1303,7 @@ inline bool is_even(value x) {
 }
 inline bool is_odd(value x) {
     if (!is_num(x))
-        throw hl_exception("'is_odd' called on non-number {}", value_kind_str(x));
+        throw hl_exception("'is_odd' called on non-number %s", value_kind_str(x));
     double d = unwrap_f64(x);
     if ((double)(int)d != d)
         return false;
@@ -1332,17 +1311,17 @@ inline bool is_odd(value x) {
 }
 inline bool is_zero(value x) {
     if (!is_num(x))
-        throw hl_exception("'is_odd' called on non-number {}", value_kind_str(x));
+        throw hl_exception("'is_odd' called on non-number %s", value_kind_str(x));
     return unwrap_f64(x) == 0;
 }
 inline bool is_positive(value x) {
     if (!is_num(x))
-        throw hl_exception("'is_odd' called on non-number {}", value_kind_str(x));
+        throw hl_exception("'is_odd' called on non-number %s", value_kind_str(x));
     return unwrap_f64(x) > 0;
 }
 inline bool is_negative(value x) {
     if (!is_num(x))
-        throw hl_exception("'is_odd' called on non-number {}", value_kind_str(x));
+        throw hl_exception("'is_odd' called on non-number %s", value_kind_str(x));
     return unwrap_f64(x) < 0;
 }
 
@@ -1373,90 +1352,90 @@ inline bool is_equal(value left, value right) noexcept {
 inline bool operator==(value left, value right) {
     if (is_num(left) || is_num(right)) {
         if (!is_num(left))
-            throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+            throw hl_exception("'==' called on non-number %s", value_kind_str(left));
         if (!is_num(right))
-            throw hl_exception("'==' called on non-number {}", value_kind_str(right));
+            throw hl_exception("'==' called on non-number %s", value_kind_str(right));
         return unwrap_f64(left) == unwrap_f64(right);
     }
     if (is_string(left) || is_string(right)) {
         if (!is_string(left))
-            throw hl_exception("'==' called on non-string {}", value_kind_str(left));
+            throw hl_exception("'==' called on non-string %s", value_kind_str(left));
         if (!is_string(right))
-            throw hl_exception("'==' called on non-string {}", value_kind_str(right));
+            throw hl_exception("'==' called on non-string %s", value_kind_str(right));
         return unwrap_string_view(left) == unwrap_string_view(right);
     }
-    throw hl_exception("unexpected types for '==' {} {}", value_kind_str(left), value_kind_str(right));
+    throw hl_exception("unexpected types for '==' %s %s", value_kind_str(left), value_kind_str(right));
 }
 inline bool operator==(value left, double right) {
     if (!is_num(left))
-        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+        throw hl_exception("'==' called on non-number %s", value_kind_str(left));
     return unwrap_f64(left) == right;
 }
 inline bool operator==(value left, std::string_view right) {
     if (!is_string(left))
-        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+        throw hl_exception("'==' called on non-number %s", value_kind_str(left));
     return unwrap_string_view(left) == right;
 }
 
 inline bool operator!=(value left, value right) {
     if (is_num(left) || is_num(right)) {
         if (!is_num(left))
-            throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
+            throw hl_exception("'!=' called on non-number %s", value_kind_str(left));
         if (!is_num(right))
-            throw hl_exception("'!=' called on non-number {}", value_kind_str(right));
+            throw hl_exception("'!=' called on non-number %s", value_kind_str(right));
         return unwrap_f64(left) != unwrap_f64(right);
     }
     if (is_string(left) || is_string(right)) {
         if (!is_string(left))
-            throw hl_exception("'!=' called on non-string {}", value_kind_str(left));
+            throw hl_exception("'!=' called on non-string %s", value_kind_str(left));
         if (!is_string(right))
-            throw hl_exception("'!=' called on non-string {}", value_kind_str(right));
+            throw hl_exception("'!=' called on non-string %s", value_kind_str(right));
         return unwrap_string_view(left) != unwrap_string_view(right);
     }
-    throw hl_exception("unexpected types for '!=' {} {}", value_kind_str(left), value_kind_str(right));
+    throw hl_exception("unexpected types for '!=' %s %s", value_kind_str(left), value_kind_str(right));
 }
 inline bool operator!=(value left, double x) {
     if (!is_num(left))
-        throw hl_exception("'!=' called on non-number {}", value_kind_str(left));
+        throw hl_exception("'!=' called on non-number %s", value_kind_str(left));
     return unwrap_f64(left) != x;
 }
 inline bool operator!=(value left, std::string_view right) {
     if (!is_num(left))
-        throw hl_exception("'==' called on non-number {}", value_kind_str(left));
+        throw hl_exception("'==' called on non-number %s", value_kind_str(left));
     return unwrap_string_view(left) != right;
 }
 
 inline value operator+(value left, value right) {
     if (!is_num(left))
-        throw hl_exception("'+' called on non-number {}", value_kind_str(left));
+        throw hl_exception("'+' called on non-number %s", value_kind_str(left));
     if (!is_num(right))
-        throw hl_exception("'+' called on non-number {}", value_kind_str(right));
+        throw hl_exception("'+' called on non-number %s", value_kind_str(right));
     return make_value(unwrap_f64(left) + unwrap_f64(right));
 }
 inline value operator-(value left, value right) {
     if (!is_num(left))
-        throw hl_exception("'-' called on non-number {}", value_kind_str(left));
+        throw hl_exception("'-' called on non-number %s", value_kind_str(left));
     if (!is_num(right))
-        throw hl_exception("'-' called on non-number {}", value_kind_str(right));
+        throw hl_exception("'-' called on non-number %s", value_kind_str(right));
     return make_value(unwrap_f64(left) - unwrap_f64(right));
 }
 inline value operator*(value left, value right) {
     if (!is_num(left))
-        throw hl_exception("'*' called on non-number {}", value_kind_str(left));
+        throw hl_exception("'*' called on non-number %s", value_kind_str(left));
     if (!is_num(right))
-        throw hl_exception("'*' called on non-number {}", value_kind_str(right));
+        throw hl_exception("'*' called on non-number %s", value_kind_str(right));
     return make_value(unwrap_f64(left) * unwrap_f64(right));
 }
 inline value operator*(value left, double right) {
     if (!is_num(left))
-        throw hl_exception("'*' called on non-number {}", value_kind_str(left));
+        throw hl_exception("'*' called on non-number %s", value_kind_str(left));
     return make_value(unwrap_f64(left) * right);
 }
 inline value operator/(value left, value right) {
     if (!is_num(left))
-        throw hl_exception("'/' called on non-number {}", value_kind_str(left));
+        throw hl_exception("'/' called on non-number %s", value_kind_str(left));
     if (!is_num(right))
-        throw hl_exception("'/' called on non-number {}", value_kind_str(right));
+        throw hl_exception("'/' called on non-number %s", value_kind_str(right));
     return make_value(unwrap_f64(left) / unwrap_f64(right));
 }
 
@@ -1793,7 +1772,7 @@ inline value read_function(std::string_view s, const char **end = nullptr) {
 
 inline std::string print(value x) {
     switch (get_value_kind(x)) {
-    case value_kind::num: return std::format("{:g}", unwrap_f64(x));
+    case value_kind::num: return std::to_string(unwrap_f64(x));
     case value_kind::nil: return "()";
     case value_kind::tru: return "t";
     case value_kind::cons: {
@@ -1836,7 +1815,7 @@ inline std::string print(value x) {
             case '\'': result += "\\'"; break;
             case '\"': result += "\\\""; break;
             case '\?': result += "\\x3f"; break;
-            default: result += std::format("\\x{:x}{:x}", (uint8_t)c >> 4, ((uint8_t)c & 0x0f));
+            default: result += std::to_string(c);
             }
         }
         return result + "\"";

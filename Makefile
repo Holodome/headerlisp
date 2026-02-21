@@ -22,7 +22,7 @@ debug:
 	mkdir -p ./build/debug && \
 	cd build/debug && \
 	cmake $(GENERATOR) $(FORCE_COLOR) $(ASAN_FLAG) -DCMAKE_EXPORT_COMPILE_COMMANDS=On -DCMAKE_BUILD_TYPE=Debug ../.. && \
-	cmake --build . --config Debug --target all -j$(nproc)
+	cmake --build . --config Debug --target all 
 
 release: 
 	mkdir -p ./build/release && \
