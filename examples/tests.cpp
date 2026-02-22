@@ -59,6 +59,7 @@ void test_type_checkers() {
     value true_val = make_value(true);
     value cons_val = cons(make_value(1), make_value(2));
     value list_val = list(1, 2, 3);
+    value non_list_val = list_dot(1, 2, 3);
 
     TEST(is_num(int_val), "int should be numeric");
     TEST(is_num(double_val), "double should be numeric");
@@ -73,6 +74,7 @@ void test_type_checkers() {
     TEST(!is_string(int_val), "int should not be string");
     TEST(is_list(list_val), "list should be list");
     TEST(!is_list(cons_val), "dotted pair should not be list");
+    TEST(!is_list(non_list_val), "dotted list should not be list");
 }
 
 void test_creation_and_access() {
@@ -110,6 +112,11 @@ void test_creation_and_access() {
     auto [car_ref, cdr_ref] = unapply_cons(pair);
     TEST(car_ref.as_int() == 10, "unapply_cons car");
     TEST(cdr_ref.as_int() == 20, "unapply_cons cdr");
+
+    value nonlst = list_dot(1, 2, 3);
+    TEST(car(nonlst).as_int() == 1, "");
+    TEST(cadr(nonlst).as_int() == 2, "");
+    TEST(cddr(nonlst).as_int() == 3, "");
 }
 
 void test_optional_accessors() {
@@ -318,7 +325,7 @@ void test_heterogeneous_and_iteration() {
     TEST(collected.size() == 3, "iter count");
     TEST(collected[0] == "apple" && collected[2] == "cherry", "iter values");
 
-    TEST_THROWS((void)mixed.iter().as<std::string_view>().begin(),
+    TEST_THROWS((void)*mixed.iter().as<std::string_view>().begin(),
                 "iter on mixed list should throw when accessing as string_view");
 }
 void test_map_filter_numeric() {
@@ -630,8 +637,8 @@ void test_invalid_uses() {
     // --- Heterogeneous iteration ---
     value mixed = list(1, "hello", true);
     // .iter().as<T>() should throw if any element is not of type T
-    TEST_THROWS((void)mixed.iter().as<int>().begin()++ ++, "iter().as<int>() on mixed list");
-    TEST_THROWS((void)mixed.iter().as<std::string_view>().begin()++ ++, "iter().as<string_view>() on mixed list");
+    TEST_THROWS((void)*mixed.iter().as<int>().begin()++ ++, "iter().as<int>() on mixed list");
+    TEST_THROWS((void)*mixed.iter().as<std::string_view>().begin()++ ++, "iter().as<string_view>() on mixed list");
     // Homogeneous list works:
     value hom = list(1, 2, 3);
     // No throw:
@@ -787,7 +794,7 @@ template <> struct headerlisp::from_list<Person> {
         p.name = name.as_string_view();
         p.address = addr.as_string_view();
         p.age = age.as_int();
-        if (!headerlisp::is_nil(email)) {
+        if (email) {
             p.email = std::string(email.as_string_view());
         }
         return p;
@@ -859,7 +866,7 @@ void test_serialization_complex() {
     std::string printed = headerlisp::print(serialized);
     TEST(
         printed ==
-            R"FOO(("TechCorp" 2000.000000 (("Engineering" ("Alice" "123 Wonderland" 30.000000 "alice@example.com") (("Bob" "456 Builder St" 25.000000 ()) ("Charlie" "789 Chocolate Ave" 35.000000 "charlie@wonka.com"))) ("Sales" ("Bob" "456 Builder St" 25.000000 ()) ()))))FOO",
+            R"FOO((TechCorp 2000 ((Engineering (Alice "123 Wonderland" 30 alice@example.com) ((Bob "456 Builder St" 25 ()) (Charlie "789 Chocolate Ave" 35 charlie@wonka.com))) (Sales (Bob "456 Builder St" 25 ()) ()))))FOO",
         "serialized wrong");
 
     // Deserialize

@@ -41,7 +41,7 @@ int main() {
 
     auto deserialized = hl::read(serialized);
     // Iterators are used to deserialize a list of some type.
-    for (Person &p : deserialized.iter().as<Person>()) {
+    for (Person p : deserialized.iter().as<Person>()) {
         printf("Person(name=%s,address=%s,age=%d)\n", p.name.c_str(), p.address.c_str(), p.age);
     }
 }

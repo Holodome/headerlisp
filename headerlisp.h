@@ -111,12 +111,14 @@ public:
     constexpr static value make(uint64_t x) noexcept { return value(constructor_tag{}, x); }
     constexpr uint64_t internal() const noexcept { return u64_; }
 
-    value_kind kind() const;
+    value_kind kind() const noexcept;
     value_range iter() const noexcept;
     template <typename T> T as() const;
     int as_int() const { return as<int>(); }
     double as_f64() const { return as<double>(); }
     std::string_view as_string_view() const { return as<std::string_view>(); }
+
+    explicit constexpr operator bool() const noexcept;
 
 private:
     constexpr value(constructor_tag, uint64_t x) noexcept : u64_(x) {}
@@ -165,9 +167,14 @@ inline value make_value(value x) noexcept;
 
 inline value new_string(const char *str, size_t length);
 inline value new_stringz(const char *str);
-inline value cons(value car, value cdr);
 
+// (<car> . <cdr>)
+template <typename T, typename U> inline value cons(T &&car, U &&cdr);
+
+// (<args1> <args2> ...)
 template <typename... Args> value list(Args &&...args);
+// (<args1> <args2> ... . <last>)
+template <typename... Args> value list_dot(Args &&...args);
 template <typename It> value list_from_iter(It start, It end);
 
 //
@@ -182,7 +189,7 @@ inline bool is_nil(value x) noexcept;
 inline bool is_true(value x) noexcept;
 inline bool is_cons(value x) noexcept;
 inline bool is_string(value x) noexcept;
-inline bool is_list(value x) noexcept;
+inline bool is_list(value x);
 
 //
 // Unsafe functions that unwrap inner storage with assumption that type is correct
@@ -353,7 +360,7 @@ template <typename Fn> std::optional<size_t> index_of(value lst, Fn f);
 inline std::optional<size_t> index_of(value lst, value v);
 template <typename Fn> bool member(value v, value lst, Fn f);
 inline bool member(value v, value lst);
-inline value range(size_t end);
+inline value range(unsigned);
 inline value range(double start, double end, double step = 1.0);
 template <typename Fn> value build_list(size_t n, Fn f);
 
@@ -425,6 +432,7 @@ struct obj_env {
 struct obj_str {
     size_t length;
     uint32_t hash;
+    bool need_escaping;
     char str[1];
 };
 
@@ -444,12 +452,12 @@ inline obj_str *unwrap_string(value x) noexcept {
     return (obj_str *)obj->as;
 }
 
-inline uint32_t djb2(const char *src, const char *dst) noexcept {
+inline uint32_t djb2(const char *src, const char *end) noexcept {
     uint32_t hash = 5381;
     do {
         int c = *src++;
         hash = ((hash << 5) + hash) + c;
-    } while (src != dst);
+    } while (src != end);
     return hash;
 }
 
@@ -493,8 +501,10 @@ inline value new_string(context *ctx, const char *value, size_t length) {
     size_t actual_length = 0;
     char *write_cursor = str->str;
     const char *end = value + length;
+    bool need_escaping = false;
     for (const char *cursor = value; cursor < end;) {
         if (*cursor == '\\') {
+            need_escaping = true;
             ++cursor;
             if (cursor >= end)
                 throw hl_exception("invalid escape sequence");
@@ -526,12 +536,16 @@ inline value new_string(context *ctx, const char *value, size_t length) {
             ++actual_length;
             continue;
         }
+        if (!isgraph(*cursor)) {
+            need_escaping = true;
+        }
         *write_cursor++ = *cursor++;
         ++actual_length;
     }
     assert((size_t)(write_cursor - str->str) <= length + 1);
     *write_cursor = '\0';
     str->length = actual_length;
+    str->need_escaping = need_escaping;
     str->hash = djb2(str->str, str->str + actual_length);
 
     return nan_box_ptr(header);
@@ -578,7 +592,7 @@ inline value make_value(double x) noexcept {
     return value::make(u64);
 }
 inline value make_value(int x) noexcept { return make_value((double)x); }
-inline value make_value(size_t x) noexcept { return make_value((double)x); }
+inline value make_value(unsigned x) noexcept { return make_value((int)x); }
 inline value make_value(nullptr_t) noexcept { return nil; }
 inline value make_value(std::string_view s) {
     std::string_view sv{s};
@@ -600,6 +614,25 @@ template <typename... Args> value list(Args &&...args) {
     return h;
 }
 
+template <typename T> inline void list_dot_helper(value &, value &t, T &&last) {
+    assert(t);
+    unwrap_setcdr(t, make_value(std::forward<T>(last)));
+}
+
+template <typename T, typename U, typename... Rest>
+void list_dot_helper(value &h, value &t, T &&first, U &&second, Rest &&...rest) {
+    add_last(h, t, make_value(std::forward<T>(first)));
+    list_dot_helper(h, t, std::forward<U>(second), std::forward<Rest>(rest)...);
+}
+
+template <typename... Args> value list_dot(Args &&...args) {
+    static_assert(sizeof...(Args) >= 2, "Need at least two arguments");
+    value h = nil;
+    value t = nil;
+    list_dot_helper(h, t, std::forward<Args>(args)...);
+    return h;
+}
+
 template <typename It> value list_from_iter(It start, It end) {
     value h = nil;
     value t = nil;
@@ -612,7 +645,10 @@ template <typename It> value list_from_iter(It start, It end) {
 constexpr value::value() : u64_(nil.u64_) {}
 constexpr value::value(nullptr_t) : u64_(nil.u64_) {}
 
-inline value cons(value car, value cdr) { return internal::new_cons(&internal::g_ctx, car, cdr); }
+template <typename T, typename U> inline value cons(T &&car, U &&cdr) {
+    return internal::new_cons(&internal::g_ctx, make_value(std::forward<T>(car)), make_value(std::forward<U>(cdr)));
+}
+
 inline value new_string(const char *value, size_t length) {
     return internal::new_string(&internal::g_ctx, value, length);
 }
@@ -658,13 +694,12 @@ private:
     value current_;
 };
 
-// FIXME: Make this lazy init of T
 template <typename T, typename = std::enable_if<to_list_concept<T>::value>> class deserializing_value_iter {
 public:
     using difference_type = ptrdiff_t;
     using value_type = T;
     using pointer = T *;
-    using reference = T &;
+    using reference = T;
     using iterator_category = std::forward_iterator_tag;
 
     deserializing_value_iter() = delete;
@@ -673,9 +708,9 @@ public:
     deserializing_value_iter &operator=(const deserializing_value_iter &) noexcept = default;
     deserializing_value_iter &operator=(deserializing_value_iter &&) noexcept = default;
 
-    explicit deserializing_value_iter(value x) : current_(x) { update_current_value(); }
+    explicit deserializing_value_iter(value x) : current_(x) {}
 
-    reference operator*() { return current_value_; }
+    reference operator*() { return from_list<T>{}(car(current_)); }
     bool operator==(deserializing_value_iter other) const noexcept {
         return current_.internal() == other.current_.internal();
     }
@@ -688,18 +723,11 @@ public:
     }
     deserializing_value_iter &operator++() {
         current_ = cdr(current_);
-        update_current_value();
         return *this;
     }
 
 private:
-    void update_current_value() {
-        if (!is_nil(current_))
-            current_value_ = from_list<T>{}(car(current_));
-    }
-
     value current_;
-    T current_value_;
 };
 
 template <typename T, typename = std::enable_if<from_list_concept<T>::value>> class deserializing_value_range {
@@ -772,7 +800,7 @@ inline bool is_nil(value x) noexcept { return x.internal() == nil.internal(); }
 inline bool is_true(value x) noexcept { return x.internal() == tru.internal(); }
 inline bool is_cons(value x) noexcept { return is_obj(x) && internal::nan_unbox_ptr(x)->kind == value_kind::cons; }
 inline bool is_string(value x) noexcept { return is_obj(x) && internal::nan_unbox_ptr(x)->kind == value_kind::string; }
-inline bool is_list(value x) noexcept { return is_nil(x) || (is_cons(x) && is_list(cdr(x))); }
+inline bool is_list(value x) { return is_nil(x) || (is_cons(x) && is_list(cdr(x))); }
 
 //
 // Unsafe accessors
@@ -833,7 +861,8 @@ inline cons_unapply_result unapply_cons(value x) {
     return {unwrap_car(x), unwrap_cdr(x)};
 }
 
-inline value_kind value::kind() const { return get_value_kind(*this); }
+inline value_kind value::kind() const noexcept { return get_value_kind(*this); }
+constexpr value::operator bool() const noexcept { return u64_ != nil.u64_; }
 
 //
 // Library list accessors
@@ -906,13 +935,13 @@ inline list_bind_4 first_4(value x) { return {first(x), second(x), third(x), fou
 // Optional list accessors
 //
 inline std::optional<value> car_opt(value x) {
-    if (is_nil(x)) {
+    if (!x) {
         return std::nullopt;
     }
     return car(x);
 }
 inline std::optional<value> cdr_opt(value x) {
-    if (is_nil(x)) {
+    if (!x) {
         return std::nullopt;
     }
     return cdr(x);
@@ -967,12 +996,12 @@ inline std::optional<value> nth_opt(value lst, size_t idx) {
     return internal::flat_map<value>(nthcdr_opt(lst, idx), car);
 }
 inline std::optional<value> nthcdr_opt(value lst, size_t idx) {
-    if (is_nil(lst)) {
+    if (!lst) {
         return std::nullopt;
     }
     while (idx--) {
         lst = cdr(lst);
-        if (is_nil(lst)) {
+        if (!lst) {
             return std::nullopt;
         }
     }
@@ -984,7 +1013,7 @@ inline std::optional<value> nthcdr_opt(value lst, size_t idx) {
 //
 
 inline void add_last(value &first, value &last, value x) {
-    if (is_nil(last)) {
+    if (!last) {
         first = last = cons(x, nil);
     } else {
         value new_last = cons(x, nil);
@@ -1077,14 +1106,14 @@ template <typename U, typename Fn> U foldl(Fn f, U init, value lst1, value lst2)
     return result;
 }
 template <typename U, typename Fn> U foldr(Fn f, U init, value lst) {
-    if (is_nil(lst)) {
+    if (!lst) {
         return init;
     }
     auto [a, b] = unapply_cons(lst);
     return f(a, foldr(f, init, b));
 }
 template <typename U, typename Fn> U foldr(Fn f, U init, value lst1, value lst2) {
-    if (is_nil(lst1) || is_nil(lst2)) {
+    if (!lst1 || !lst2) {
         return init;
     }
     return f(car(lst1), car(lst2), foldr(f, init, cdr(lst1), cdr(lst2)));
@@ -1168,9 +1197,9 @@ template <typename F> bool member(value v, value lst, F f) {
 }
 inline bool member(value v, value lst) { return index_of(lst, v).has_value(); }
 
-inline value range(size_t end) {
+inline value range(unsigned end) {
     value h = nil, t = nil;
-    for (size_t i = 0; i < end; ++i) {
+    for (unsigned i = 0; i < end; ++i) {
         add_last(h, t, make_value(i));
     }
     return h;
@@ -1688,7 +1717,11 @@ inline value read_function(std::string_view s, const char **end = nullptr) {
 
 inline std::string print(value x) {
     switch (get_value_kind(x)) {
-    case value_kind::num: return std::to_string(unwrap_f64(x));
+    case value_kind::num: {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%g", x.as_f64());
+        return std::string{buf};
+    };
     case value_kind::nil: return "()";
     case value_kind::tru: return "t";
     case value_kind::cons: {
@@ -1702,7 +1735,7 @@ inline std::string print(value x) {
                 result += print(next);
                 break;
             }
-            if (!is_nil(next)) {
+            if (next) {
                 result += " ";
             }
             x = next;
@@ -1710,6 +1743,10 @@ inline std::string print(value x) {
         return result + ")";
     }
     case value_kind::string: {
+        internal::obj_str *obj = internal::unwrap_string(x);
+        if (!obj->need_escaping) {
+            return std::string{obj->str, obj->str + obj->length};
+        }
         std::string_view sv = unwrap_string_view(x);
         std::string result = "\"";
         result.reserve(sv.length() + 2);
@@ -1748,6 +1785,12 @@ template <> struct from_list<double> {
 };
 template <> struct from_list<int> {
     int operator()(value x) { return as_num_int(x); }
+};
+template <> struct from_list<unsigned> {
+    unsigned operator()(value x) { return as_num_int(x); }
+};
+template <> struct from_list<bool> {
+    bool operator()(value x) { return is_true(x); }
 };
 template <> struct from_list<std::string_view> {
     std::string_view operator()(value x) { return as_string_view(x); }
