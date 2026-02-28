@@ -378,6 +378,7 @@ inline bool is_negative(value x);
 //
 inline bool is_equal(value left, value right) noexcept;
 inline bool is_equal(value left, std::string_view right) noexcept;
+inline bool is_equal(value left, int right) noexcept;
 
 inline value operator+(value left, value right);
 inline value operator+(value left, double right);
@@ -1279,6 +1280,11 @@ inline bool is_equal(value left, value right) noexcept {
     }
     __builtin_unreachable();
 }
+
+inline bool is_equal(value left, std::string_view right) noexcept {
+    return is_string(left) && left.as_string_view() == right;
+}
+inline bool is_equal(value left, int right) noexcept { return is_num(left) == left.as_int() == right; }
 
 inline bool operator==(value left, value right) {
     if (is_num(left) || is_num(right)) {
