@@ -916,6 +916,10 @@ void test_serialization_complex() {
     TEST(empty_str == "()", "empty list prints as ()");
     auto empty_vec = headerlisp::as<std::vector<Person>>(headerlisp::read(empty_str));
     TEST(empty_vec.empty(), "empty vector deserialized");
+
+    value non_num = make_value("0x123");
+    std::string s = print(non_num);
+    TEST(s == "\"0x123\"", "non num should be str");
 }
 
 struct Node {

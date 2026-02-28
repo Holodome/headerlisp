@@ -377,6 +377,7 @@ inline bool is_negative(value x);
 // Equality and operator overloading
 //
 inline bool is_equal(value left, value right) noexcept;
+inline bool is_equal(value left, std::string_view right) noexcept;
 
 inline value operator+(value left, value right);
 inline value operator+(value left, double right);
@@ -1744,10 +1745,25 @@ inline std::string print(value x) {
     }
     case value_kind::string: {
         internal::obj_str *obj = internal::unwrap_string(x);
-        if (!obj->need_escaping) {
+        std::string_view sv = unwrap_string_view(x);
+
+        bool looks_like_number = false;
+        char *strtod_end = nullptr;
+        (void)strtoll(sv.begin(), &strtod_end, 10);
+        if (strtod_end == sv.end()) {
+            looks_like_number = true;
+        }
+        if (!looks_like_number) {
+            strtod_end = nullptr;
+            (void)strtod(sv.begin(), &strtod_end);
+            if (strtod_end == sv.end()) {
+                looks_like_number = true;
+            }
+        }
+        if (!obj->need_escaping && !looks_like_number) {
             return std::string{obj->str, obj->str + obj->length};
         }
-        std::string_view sv = unwrap_string_view(x);
+
         std::string result = "\"";
         result.reserve(sv.length() + 2);
         for (auto c : sv) {
