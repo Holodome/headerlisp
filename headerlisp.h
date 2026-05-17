@@ -490,8 +490,8 @@ inline bool hex_symbol_to_int(int x, int *value) noexcept {
     return false;
 }
 
-inline value new_string(context *ctx, const char *value, size_t length) {
-    assert(value != NULL);
+inline value new_string(context *ctx, const char *v, size_t length) {
+    assert(v != NULL);
     assert(length != 0);
     assert(length < UINT32_MAX);
 
@@ -502,9 +502,9 @@ inline value new_string(context *ctx, const char *value, size_t length) {
     obj_str *str = reinterpret_cast<obj_str *>(header->as);
     size_t actual_length = 0;
     char *write_cursor = str->str;
-    const char *end = value + length;
+    const char *end = v + length;
     bool need_escaping = false;
-    for (const char *cursor = value; cursor < end;) {
+    for (const char *cursor = v; cursor < end;) {
         if (*cursor == '\\') {
             need_escaping = true;
             ++cursor;
@@ -651,10 +651,8 @@ template <typename T, typename U> inline value cons(T &&car, U &&cdr) {
     return internal::new_cons(&internal::g_ctx, make_value(std::forward<T>(car)), make_value(std::forward<U>(cdr)));
 }
 
-inline value new_string(const char *value, size_t length) {
-    return internal::new_string(&internal::g_ctx, value, length);
-}
-inline value new_stringz(const char *value) { return internal::new_string(&internal::g_ctx, value, strlen(value)); }
+inline value new_string(const char *v, size_t l) { return internal::new_string(&internal::g_ctx, v, l); }
+inline value new_stringz(const char *v) { return internal::new_string(&internal::g_ctx, v, strlen(v)); }
 
 //
 // Iterators
@@ -682,12 +680,12 @@ public:
     }
     constexpr bool operator!=(value_iter other) const noexcept { return !(*this == other); }
 
-    constexpr value_iter operator++(int) const {
+    value_iter operator++(int) const {
         value_iter tmp = *this;
         ++tmp;
         return tmp;
     }
-    constexpr value_iter &operator++() {
+    value_iter &operator++() {
         current_ = cdr(current_);
         return *this;
     }
@@ -1284,7 +1282,7 @@ inline bool is_equal(value left, value right) noexcept {
 inline bool is_equal(value left, std::string_view right) noexcept {
     return is_string(left) && left.as_string_view() == right;
 }
-inline bool is_equal(value left, int right) noexcept { return is_num(left) == left.as_int() == right; }
+inline bool is_equal(value left, int right) noexcept { return is_num(left) && left.as_int() == right; }
 
 inline bool operator==(value left, value right) {
     if (is_num(left) || is_num(right)) {
@@ -1555,7 +1553,7 @@ template <typename T> struct base_reader {
     const token &tok;
     bool should_return_old_token = false;
 
-    explicit base_reader(lexer &lex) noexcept : lex(lex), tok(lex.next) {}
+    explicit base_reader(lexer &l) noexcept : lex(l), tok(lex.next) {}
 
     void peek_token() {
         if (should_return_old_token) {
