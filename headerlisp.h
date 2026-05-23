@@ -101,7 +101,7 @@ class value {
 
 public:
     constexpr value();
-    constexpr value(nullptr_t);
+    constexpr value(std::nullptr_t);
 
     constexpr value(const value &) noexcept = default;
     constexpr value(value &&) noexcept = default;
@@ -595,7 +595,7 @@ inline value make_value(double x) noexcept {
 }
 inline value make_value(int x) noexcept { return make_value((double)x); }
 inline value make_value(unsigned x) noexcept { return make_value((int)x); }
-inline value make_value(nullptr_t) noexcept { return nil; }
+inline value make_value(std::nullptr_t) noexcept { return nil; }
 inline value make_value(std::string_view s) {
     std::string_view sv{s};
     return new_string(sv.begin(), sv.length());
@@ -645,7 +645,7 @@ template <typename It> value list_from_iter(It start, It end) {
 }
 
 constexpr value::value() : u64_(nil.u64_) {}
-constexpr value::value(nullptr_t) : u64_(nil.u64_) {}
+constexpr value::value(std::nullptr_t) : u64_(nil.u64_) {}
 
 template <typename T, typename U> inline value cons(T &&car, U &&cdr) {
     return internal::new_cons(&internal::g_ctx, make_value(std::forward<T>(car)), make_value(std::forward<U>(cdr)));
@@ -1794,6 +1794,7 @@ inline std::string print(value x) {
         return result + "\"";
     }
     }
+    __builtin_unreachable();
 }
 
 //
