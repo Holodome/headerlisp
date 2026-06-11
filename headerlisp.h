@@ -26,16 +26,17 @@
 #ifndef HEADERLISP_H
 #define HEADERLISP_H
 
-#include <assert.h>
+#include <cassert>
 #include <cctype>
 #include <cstddef>
+#include <cstring>
 #include <cstdint>
 #include <cstdlib>
+#include <cstdarg>
+
 #include <iterator>
 #include <new>
 #include <optional>
-#include <stddef.h>
-#include <stdint.h>
 #include <string>
 #include <string_view>
 #include <type_traits>
