@@ -6,6 +6,7 @@
 #include <numeric>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "headerlisp.h"
@@ -13,6 +14,9 @@
 using namespace headerlisp;
 
 static context_guard guard{1 << 24};
+
+static_assert(!std::is_move_constructible<headerlisp::context_guard>::value, "context_guard must not be movable");
+static_assert(!std::is_move_assignable<headerlisp::context_guard>::value, "context_guard must not be move-assignable");
 
 // ----- Simple test harness -----
 static int tests_run = 0;
@@ -291,6 +295,7 @@ void test_unsafe_functions_and_mutators() {
     // unwrap_string_view
     value str = new_stringz("hello");
     TEST(unwrap_string_view(str) == "hello", "unwrap_string_view");
+    TEST(std::string(unwrap_c_str(str)) == "hello", "unwrap_c_str");
 
     // unwrap_car/cdr
     TEST(unwrap_car(pair).as_int() == 10, "unwrap_car");
@@ -472,6 +477,9 @@ void test_invalid_uses() {
     TEST_THROWS(cons_val.as_string_view(), "as_string_view on cons");
     TEST_THROWS(nil_val.as_string_view(), "as_string_view on nil");
     TEST_THROWS(bool_val.as_string_view(), "as_string_view on boolean");
+    TEST_THROWS(num_val.as_string(), "as_string on number");
+    TEST_THROWS(num_val.as_c_str(), "as_c_str on number");
+    TEST_THROWS(as_c_str(cons_val), "as_c_str on cons");
 
     TEST_THROWS(str_val.as_f64(), "as_num_f64 on string");
     TEST_THROWS(cons_val.as_f64(), "as_num_f64 on cons");
@@ -922,6 +930,138 @@ void test_serialization_complex() {
     TEST(s == "\"0x123\"", "non num should be str");
 }
 
+void test_string_roundtrip_and_reader_edges() {
+    printf("--- String round-trip and reader edges ---\n");
+
+    std::vector<std::string> strings = {
+        "",
+        "\"",
+        "\\",
+        "(",
+        ")",
+        ";",
+        "hello world",
+        "line\nbreak",
+        "0x123",
+        "t",
+        ".",
+        "TechCorp",
+        "alice@example.com",
+        "hello,world",
+        std::string("nul\0byte", 8),
+    };
+
+    for (const std::string &expected : strings) {
+        std::string_view expected_view{expected.data(), expected.size()};
+        value original = make_value(expected_view);
+        std::string printed = print(original);
+        const char *end = nullptr;
+        value parsed = read(std::string_view{printed}, &end);
+
+        TEST(end == printed.data() + printed.size(), "printed string should be fully consumed");
+        TEST(is_string(parsed), "printed string should read back as string");
+        TEST(as_string_view(parsed) == expected_view, "string round-trip");
+        TEST(as_string(parsed) == expected, "as_string should copy full string contents");
+        TEST(parsed.as_string() == expected, "value::as_string should copy full string contents");
+        TEST(parsed.as_c_str()[expected.size()] == '\0', "as_c_str should expose trailing null terminator");
+        if (expected.find('\0') == std::string::npos) {
+            TEST(std::string(as_c_str(parsed)) == expected, "as_c_str should expose c-string contents");
+            TEST(std::string(parsed.as_c_str()) == expected, "value::as_c_str should expose c-string contents");
+            TEST(parsed.as<std::string>() == expected, "from_list<std::string> should copy string contents");
+        }
+    }
+
+    TEST(print(make_value("")) == "\"\"", "empty string should print quoted");
+    TEST(print(make_value("\"")) == "\"\\\"\"", "quote should be escaped");
+    TEST(print(make_value("\\")) == "\"\\\\\"", "backslash should be escaped");
+    TEST(print(make_value("(")) == "\"(\"", "opening paren should print quoted");
+    TEST(print(make_value(";")) == "\";\"", "semicolon should print quoted");
+    TEST(print(make_value("t")) == "\"t\"", "true token string should print quoted");
+    TEST(print(make_value(".")) == "\".\"", "dot token string should print quoted");
+    TEST(print(make_value("0x123")) == "\"0x123\"", "numeric-looking string should print quoted");
+    TEST(print(make_value("TechCorp")) == "TechCorp", "safe symbol should print bare");
+    TEST(print(make_value("alice@example.com")) == "alice@example.com", "email-like safe symbol should print bare");
+
+    char symbol_buf[3] = {'a', 'b', 'c'};
+    const char *end = nullptr;
+    value symbol = read(std::string_view{symbol_buf, sizeof(symbol_buf)}, &end);
+    TEST(as_string_view(symbol) == "abc", "non-null-terminated symbol should read");
+    TEST(end == symbol_buf + sizeof(symbol_buf), "symbol reader should stop at buffer end");
+
+    char quoted_quote[4] = {'"', '\\', '"', '"'};
+    value quoted = read(std::string_view{quoted_quote, sizeof(quoted_quote)}, &end);
+    TEST(as_string_view(quoted) == "\"", "escaped quote should read from bounded buffer");
+    TEST(end == quoted_quote + sizeof(quoted_quote), "quoted reader should stop at buffer end");
+
+    char whitespace[1] = {' '};
+    TEST_THROWS(read(std::string_view{whitespace, sizeof(whitespace)}), "whitespace-only input should throw");
+    char comment[2] = {';', 'x'};
+    TEST_THROWS(read(std::string_view{comment, sizeof(comment)}), "comment-only input should throw");
+    TEST_THROWS(read(std::string_view{}), "empty input should throw");
+}
+
+void test_unsigned_range_and_string_compare() {
+    printf("--- Unsigned, range, and string comparison regressions ---\n");
+
+    value big = make_value(4000000000u);
+    TEST(big.as<unsigned>() == 4000000000u, "large unsigned should round-trip");
+    TEST(read(print(big)).as<unsigned>() == 4000000000u, "large unsigned should print/read round-trip");
+    TEST_THROWS(make_value(-1).as<unsigned>(), "negative value should not convert to unsigned");
+    TEST_THROWS(make_value(3.5).as<unsigned>(), "fractional value should not convert to unsigned");
+    TEST_THROWS(make_value(4294967296.0).as<unsigned>(), "too-large value should not convert to unsigned");
+
+    value s = make_value("a");
+    TEST(s != std::string_view("b"), "string != string_view should compare strings");
+    TEST(!(s != std::string_view("a")), "string != same string_view should be false");
+    TEST_THROWS((void)(make_value(1) != std::string_view("a")), "number != string_view should throw");
+
+    value descending = range(5.0, 0.0, -2.0);
+    TEST(length(descending) == 3, "descending range length");
+    TEST(first(descending).as_f64() == 5.0 && second(descending).as_f64() == 3.0 && third(descending).as_f64() == 1.0,
+         "descending range values");
+    TEST(is_nil(range(0.0, 5.0, -1.0)), "unreachable negative range should be empty");
+    TEST(is_nil(range(5.0, 0.0, 1.0)), "unreachable positive range should be empty");
+    TEST_THROWS(range(0.0, 10.0, 0.0), "zero-step range should throw");
+
+    std::list<int> values{1, 2, 3};
+    value from_list_iter = list_from_iter(values.begin(), values.end());
+    TEST(length(from_list_iter) == 3, "list_from_iter should accept std::list iterators");
+    TEST(first(from_list_iter).as_int() == 1 && third(from_list_iter).as_int() == 3, "list_from_iter values");
+}
+
+struct OnlyTo {
+    int value;
+};
+
+struct OnlyFrom {
+    int value;
+};
+
+namespace headerlisp {
+template <> struct to_list<OnlyTo> {
+    value operator()(OnlyTo x) { return list(x.value); }
+};
+
+template <> struct from_list<OnlyFrom> {
+    OnlyFrom operator()(value x) { return {first(x).as_int()}; }
+};
+} // namespace headerlisp
+
+static_assert(headerlisp::to_list_concept<OnlyTo>::value, "OnlyTo should satisfy to_list_concept");
+static_assert(!headerlisp::from_list_concept<OnlyTo>::value, "OnlyTo should not satisfy from_list_concept");
+static_assert(!headerlisp::to_list_concept<OnlyFrom>::value, "OnlyFrom should not satisfy to_list_concept");
+static_assert(headerlisp::from_list_concept<OnlyFrom>::value, "OnlyFrom should satisfy from_list_concept");
+
+void test_trait_detection() {
+    printf("--- Trait detection ---\n");
+
+    value serialized = make_value(OnlyTo{42});
+    TEST(first(serialized).as_int() == 42, "to_list-only type should serialize");
+
+    OnlyFrom parsed = list(99).as<OnlyFrom>();
+    TEST(parsed.value == 99, "from_list-only type should deserialize");
+}
+
 struct Node {
     virtual ~Node() = default;
     virtual int eval() = 0;
@@ -1186,6 +1326,9 @@ int main() {
     test_invalid_uses();
     test_arithmetic_operators();
     test_serialization_complex();
+    test_string_roundtrip_and_reader_edges();
+    test_unsigned_range_and_string_compare();
+    test_trait_detection();
     test_variable_arity_parser();
     test_iterators();
 

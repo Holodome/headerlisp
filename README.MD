@@ -51,6 +51,6 @@ There are three main use cases for headerlisp:
     }
     ```
 4. All lists are implemented as cons pairs. There are no optimizations to use constant-time access. Type checking is done at every API call.
-5. User-defined types are supported using traits (see [serialize.cpp](examples/serialize.cpp) and [wire.cpp](examples/wire.cpp)). 
+5. User-defined types are supported using traits (see [serialize.cpp](examples/serialize.cpp)).
 6. Exceptions are used to report errors.
-7. Strings are always copied inside headerlisp memory context.
+7. Strings are always copied inside headerlisp memory context and stored with a trailing null terminator. Use `as_string_view`, `as_string`, or `as_c_str` depending on whether you need a view, owned copy, or C string pointer. C++ string constructors store bytes literally; Lisp string escape sequences are decoded when reading quoted string expressions.

@@ -28,10 +28,10 @@ release:
 	mkdir -p ./build/release && \
 	cd build/release && \
 	cmake $(GENERATOR) $(FORCE_COLOR) -DCMAKE_BUILD_TYPE=Release ../.. && \
-	cmake --build . --config Release --target all -j$(nproc)
+	cmake --build . --config Release --target all --parallel
 
 reldebug: 
 	mkdir -p ./build/reldebug && \
 	cd build/reldebug && \
 	cmake $(GENERATOR) $(FORCE_COLOR) -DCMAKE_BUILD_TYPE=RelWithDebInfo ../.. && \
-	cmake --build . --config RelWithDebInfo --target all -j$(nproc)
+	cmake --build . --config RelWithDebInfo --target all --parallel

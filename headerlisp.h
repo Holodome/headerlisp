@@ -28,6 +28,7 @@
 
 #include <cassert>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstring>
 #include <cstdint>
@@ -35,11 +36,13 @@
 #include <cstdarg>
 
 #include <iterator>
+#include <limits>
 #include <new>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace headerlisp {
 
@@ -57,9 +60,9 @@ inline context set_context(context ctx);
 class context_guard {
 public:
     context_guard(const context_guard &) = delete;
-    context_guard(context_guard &&) = default;
+    context_guard(context_guard &&) = delete;
     context_guard &operator=(const context_guard &) = delete;
-    context_guard &operator=(context_guard &&) = default;
+    context_guard &operator=(context_guard &&) = delete;
 
     context_guard() : context_guard(1 << 20) {}
     explicit context_guard(size_t size) : memory_(static_cast<char *>(malloc(size))), memory_size_(size) {
@@ -118,6 +121,8 @@ public:
     int as_int() const { return as<int>(); }
     double as_f64() const { return as<double>(); }
     std::string_view as_string_view() const { return as<std::string_view>(); }
+    std::string as_string() const;
+    const char *as_c_str() const;
 
     explicit constexpr operator bool() const noexcept;
 
@@ -154,10 +159,12 @@ template <typename T> struct to_list {};
 template <typename T> struct from_list {};
 
 template <typename T, typename = void> struct to_list_concept : std::false_type {};
-template <typename T> struct to_list_concept<T, std::void_t<decltype(sizeof(to_list<T>))>> : std::true_type {};
+template <typename T>
+struct to_list_concept<T, std::void_t<decltype(to_list<T>{}(std::declval<T>()))>> : std::true_type {};
 
 template <typename T, typename = void> struct from_list_concept : std::false_type {};
-template <typename T> struct from_list_concept<T, std::void_t<decltype(sizeof(from_list<T>))>> : std::true_type {};
+template <typename T>
+struct from_list_concept<T, std::void_t<decltype(from_list<T>{}(std::declval<value>()))>> : std::true_type {};
 
 //
 // Value constructors
@@ -196,6 +203,7 @@ inline bool is_list(value x);
 // Unsafe functions that unwrap inner storage with assumption that type is correct
 //
 inline std::string_view unwrap_string_view(value x) noexcept;
+inline const char *unwrap_c_str(value x) noexcept;
 inline value &unwrap_car(value x) noexcept;
 inline value &unwrap_cdr(value x) noexcept;
 inline double unwrap_f64(value x) noexcept;
@@ -207,8 +215,11 @@ inline void unwrap_setcdr(value c, value cdr) noexcept;
 // Checked data access
 //
 inline std::string_view as_string_view(value x);
+inline std::string as_string(value x);
+inline const char *as_c_str(value x);
 inline double as_num_f64(value x);
 inline int as_num_int(value x);
+inline unsigned as_num_unsigned(value x);
 template <typename T, typename = std::enable_if<from_list_concept<T>::value>> inline T as(value x);
 inline value &car(value x);
 inline value &cdr(value x);
@@ -381,6 +392,14 @@ inline bool is_equal(value left, value right) noexcept;
 inline bool is_equal(value left, std::string_view right) noexcept;
 inline bool is_equal(value left, int right) noexcept;
 
+namespace value_ns {
+inline bool operator==(value left, value right);
+inline bool operator==(value left, double right);
+inline bool operator==(value left, std::string_view right);
+inline bool operator!=(value left, value right);
+inline bool operator!=(value left, double right);
+inline bool operator!=(value left, std::string_view right);
+
 inline value operator+(value left, value right);
 inline value operator+(value left, double right);
 inline value operator-(value left, value right);
@@ -389,6 +408,14 @@ inline value operator*(value left, value right);
 inline value operator*(value left, double right);
 inline value operator/(value left, value right);
 inline value operator/(value left, double right);
+} // namespace value_ns
+
+using value_ns::operator==;
+using value_ns::operator!=;
+using value_ns::operator+;
+using value_ns::operator-;
+using value_ns::operator*;
+using value_ns::operator/;
 
 //
 // IO
@@ -455,13 +482,57 @@ inline obj_str *unwrap_string(value x) noexcept {
     return (obj_str *)obj->as;
 }
 
+inline bool is_space(int c) noexcept { return std::isspace(static_cast<unsigned char>(c)) != 0; }
+inline bool is_print(int c) noexcept { return std::isprint(static_cast<unsigned char>(c)) != 0; }
+inline bool is_graph(int c) noexcept { return std::isgraph(static_cast<unsigned char>(c)) != 0; }
+
 inline uint32_t djb2(const char *src, const char *end) noexcept {
     uint32_t hash = 5381;
-    do {
+    while (src != end) {
         int c = *src++;
         hash = ((hash << 5) + hash) + c;
-    } while (src != end);
+    }
     return hash;
+}
+
+inline bool looks_like_number(std::string_view sv) {
+    if (sv.empty()) {
+        return false;
+    }
+
+    std::string s{sv};
+    char *end = nullptr;
+    (void)strtoll(s.c_str(), &end, 10);
+    if (end == s.c_str() + s.size()) {
+        return true;
+    }
+
+    end = nullptr;
+    (void)strtod(s.c_str(), &end);
+    return end == s.c_str() + s.size();
+}
+
+inline bool is_bare_symbol(std::string_view sv) {
+    if (sv.empty() || sv == "t" || sv == "." || looks_like_number(sv)) {
+        return false;
+    }
+
+    for (char ch : sv) {
+        if (!is_graph(ch)) {
+            return false;
+        }
+        switch (ch) {
+        case '(':
+        case ')':
+        case ';':
+        case '"':
+        case '\\':
+        case ',':
+            return false;
+        default: break;
+        }
+    }
+    return true;
 }
 
 inline void *alloc(context *ctx, size_t size) {
@@ -492,8 +563,27 @@ inline bool hex_symbol_to_int(int x, int *value) noexcept {
 }
 
 inline value new_string(context *ctx, const char *v, size_t length) {
-    assert(v != NULL);
-    assert(length != 0);
+    assert(v != NULL || length == 0);
+    assert(length < UINT32_MAX);
+
+    void *memory = alloc(ctx, offsetof(obj, as) + offsetof(obj_str, str) + length + 1);
+    obj *header = static_cast<obj *>(memory);
+    header->kind = value_kind::string;
+
+    obj_str *str = reinterpret_cast<obj_str *>(header->as);
+    if (length) {
+        memcpy(str->str, v, length);
+    }
+    str->str[length] = '\0';
+    str->length = length;
+    str->need_escaping = !is_bare_symbol(std::string_view{str->str, str->length});
+    str->hash = djb2(str->str, str->str + str->length);
+
+    return nan_box_ptr(header);
+}
+
+inline value new_escaped_string(context *ctx, const char *v, size_t length) {
+    assert(v != NULL || length == 0);
     assert(length < UINT32_MAX);
 
     void *memory = alloc(ctx, offsetof(obj, as) + offsetof(obj_str, str) + length + 1);
@@ -534,12 +624,12 @@ inline value new_string(context *ctx, const char *v, size_t length) {
                 *write_cursor++ = (a << 4) | b;
                 break;
             }
-            default: throw hl_exception("invalid escape secuence");
+            default: throw hl_exception("invalid escape sequence");
             }
             ++actual_length;
             continue;
         }
-        if (!isgraph(*cursor)) {
+        if (!is_graph(*cursor)) {
             need_escaping = true;
         }
         *write_cursor++ = *cursor++;
@@ -548,7 +638,7 @@ inline value new_string(context *ctx, const char *v, size_t length) {
     assert((size_t)(write_cursor - str->str) <= length + 1);
     *write_cursor = '\0';
     str->length = actual_length;
-    str->need_escaping = need_escaping;
+    str->need_escaping = need_escaping || !is_bare_symbol(std::string_view{str->str, str->length});
     str->hash = djb2(str->str, str->str + actual_length);
 
     return nan_box_ptr(header);
@@ -595,7 +685,7 @@ inline value make_value(double x) noexcept {
     return value::make(u64);
 }
 inline value make_value(int x) noexcept { return make_value((double)x); }
-inline value make_value(unsigned x) noexcept { return make_value((int)x); }
+inline value make_value(unsigned x) noexcept { return make_value((double)x); }
 inline value make_value(std::nullptr_t) noexcept { return nil; }
 inline value make_value(std::string_view s) {
     std::string_view sv{s};
@@ -639,7 +729,7 @@ template <typename... Args> value list_dot(Args &&...args) {
 template <typename It> value list_from_iter(It start, It end) {
     value h = nil;
     value t = nil;
-    for (It it = start; it < end; ++it) {
+    for (It it = start; it != end; ++it) {
         add_last(h, t, make_value(*it));
     }
     return h;
@@ -695,7 +785,7 @@ private:
     value current_;
 };
 
-template <typename T, typename = std::enable_if<to_list_concept<T>::value>> class deserializing_value_iter {
+template <typename T, typename = std::enable_if<from_list_concept<T>::value>> class deserializing_value_iter {
 public:
     using difference_type = ptrdiff_t;
     using value_type = T;
@@ -811,6 +901,10 @@ inline std::string_view unwrap_string_view(value x) noexcept {
     internal::obj_str *str = internal::unwrap_string(x);
     return {str->str, str->length};
 }
+inline const char *unwrap_c_str(value x) noexcept {
+    internal::obj_str *str = internal::unwrap_string(x);
+    return str->str;
+}
 
 inline value &unwrap_car(value x) noexcept {
     internal::obj_cons *obj = internal::unwrap_cons(x);
@@ -838,12 +932,25 @@ inline std::string_view as_string_view(value x) {
         throw hl_exception("called 'as_string_view()' on non-string %s", value_kind_str(x));
     return unwrap_string_view(x);
 }
+inline std::string as_string(value x) { return std::string{as_string_view(x)}; }
+inline const char *as_c_str(value x) {
+    if (!is_string(x))
+        throw hl_exception("called 'as_c_str()' on non-string %s", value_kind_str(x));
+    return unwrap_c_str(x);
+}
 inline double as_num_f64(value x) {
     if (!is_num(x))
         throw hl_exception("called 'num_dbl() on non-number value %s", value_kind_str(x));
     return unwrap_f64(x);
 }
 inline int as_num_int(value x) { return (int)as_num_f64(x); }
+inline unsigned as_num_unsigned(value x) {
+    double d = as_num_f64(x);
+    if (!std::isfinite(d) || d < 0 || d > (double)std::numeric_limits<unsigned>::max() || (double)(unsigned)d != d) {
+        throw hl_exception("called 'as_num_unsigned()' on out-of-range value %g", d);
+    }
+    return (unsigned)d;
+}
 inline value &car(value x) {
     if (!is_cons(x))
         throw hl_exception("called 'car()' on non-cons value %s", value_kind_str(x));
@@ -851,6 +958,8 @@ inline value &car(value x) {
 }
 template <typename T, typename> inline T as(value x) { return from_list<T>{}(x); }
 template <typename T> T value::as() const { return ::headerlisp::as<T>(*this); }
+inline std::string value::as_string() const { return ::headerlisp::as_string(*this); }
+inline const char *value::as_c_str() const { return ::headerlisp::as_c_str(*this); }
 inline value &cdr(value x) {
     if (!is_cons(x))
         throw hl_exception("called 'car()' on non-cons value %s", value_kind_str(x));
@@ -1206,9 +1315,18 @@ inline value range(unsigned end) {
     return h;
 }
 inline value range(double start, double end, double step) {
+    if (step == 0) {
+        throw hl_exception("'range' called with zero step");
+    }
     value h = nil, t = nil;
-    for (double it = start; it < end; it += step) {
-        add_last(h, t, make_value(it));
+    if (step > 0) {
+        for (double it = start; it < end; it += step) {
+            add_last(h, t, make_value(it));
+        }
+    } else {
+        for (double it = start; it > end; it += step) {
+            add_last(h, t, make_value(it));
+        }
     }
     return h;
 }
@@ -1285,6 +1403,8 @@ inline bool is_equal(value left, std::string_view right) noexcept {
 }
 inline bool is_equal(value left, int right) noexcept { return is_num(left) && left.as_int() == right; }
 
+namespace value_ns {
+
 inline bool operator==(value left, value right) {
     if (is_num(left) || is_num(right)) {
         if (!is_num(left))
@@ -1309,7 +1429,7 @@ inline bool operator==(value left, double right) {
 }
 inline bool operator==(value left, std::string_view right) {
     if (!is_string(left))
-        throw hl_exception("'==' called on non-number %s", value_kind_str(left));
+        throw hl_exception("'==' called on non-string %s", value_kind_str(left));
     return unwrap_string_view(left) == right;
 }
 
@@ -1336,8 +1456,8 @@ inline bool operator!=(value left, double x) {
     return unwrap_f64(left) != x;
 }
 inline bool operator!=(value left, std::string_view right) {
-    if (!is_num(left))
-        throw hl_exception("'==' called on non-number %s", value_kind_str(left));
+    if (!is_string(left))
+        throw hl_exception("'!=' called on non-string %s", value_kind_str(left));
     return unwrap_string_view(left) != right;
 }
 
@@ -1390,6 +1510,8 @@ inline value operator/(value left, double right) {
     return make_value(unwrap_f64(left) / right);
 }
 
+} // namespace value_ns
+
 //
 // IO
 //
@@ -1426,7 +1548,7 @@ struct lexer {
     bool is_symbol_breaker(int c) noexcept {
         if (comma_symbol && c == ',')
             return true;
-        return isspace(c) || c == ';' || c == '(' || c == ')' || !isprint(c) || c == '"';
+        return is_space(c) || c == ';' || c == '(' || c == ')' || !is_print(c) || c == '"';
     }
 
     void advance() {
@@ -1441,8 +1563,8 @@ struct lexer {
 
             // Spaces
             if (is_symbol_breaker(c)) {
-                if (isspace(c)) {
-                    while (isspace(*cursor)) {
+                if (is_space(c)) {
+                    while (cursor < end && is_space(*cursor)) {
                         ++cursor;
                     }
                     token_start = cursor;
@@ -1469,9 +1591,12 @@ struct lexer {
                         if (cursor >= end) {
                             throw hl_exception("unterminated string literal");
                         }
-                        if (*cursor == '\\' && cursor + 1 < end && cursor[1] == '\"') {
-                            ++cursor;
-                            ++cursor;
+                        if (*cursor == '\\') {
+                            cursor += 1;
+                            if (cursor >= end) {
+                                throw hl_exception("unterminated string literal");
+                            }
+                            cursor += 1;
                             continue;
                         }
                         if (*cursor == '"') {
@@ -1490,7 +1615,7 @@ struct lexer {
                     while (cursor < end && *cursor != '\n') {
                         ++cursor;
                     }
-                    if (*cursor == '\n') {
+                    if (cursor < end && *cursor == '\n') {
                         ++cursor;
                     }
                     token_start = cursor;
@@ -1499,9 +1624,9 @@ struct lexer {
                 }
 
                 // other bogus stuff
-                for (;;) {
+                while (cursor < end) {
                     c = *cursor++;
-                    if (isprint(c)) {
+                    if (is_print(c)) {
                         --cursor;
                         break;
                     }
@@ -1511,12 +1636,8 @@ struct lexer {
                 return;
             }
 
-            for (;;) {
-                c = *cursor++;
-                if (is_symbol_breaker(c)) {
-                    --cursor;
-                    break;
-                }
+            while (cursor < end && !is_symbol_breaker(*cursor)) {
+                ++cursor;
             }
             size_t len = cursor - token_start;
             if (len == 1 && *token_start == '.') {
@@ -1527,16 +1648,17 @@ struct lexer {
                 return;
             }
 
+            std::string token_text{token_start, len};
             char *strtod_end = nullptr;
-            long long i64 = strtoll(token_start, &strtod_end, 10);
-            if (strtod_end == cursor) {
+            long long i64 = strtoll(token_text.c_str(), &strtod_end, 10);
+            if (strtod_end == token_text.c_str() + token_text.size()) {
                 next.kind = token_kind::num;
                 next.f64 = (double)i64;
                 return;
             }
             strtod_end = nullptr;
-            double f64 = strtod(token_start, &strtod_end);
-            if (strtod_end == cursor) {
+            double f64 = strtod(token_text.c_str(), &strtod_end);
+            if (strtod_end == token_text.c_str() + token_text.size()) {
                 next.kind = token_kind::num;
                 next.f64 = f64;
                 return;
@@ -1627,7 +1749,7 @@ struct function_reader : base_reader<function_reader> {
     value read_expr() {
         peek_token();
         switch (tok.kind) {
-        case token_kind::end: break;
+        case token_kind::end: throw hl_exception("unexpected end of input");
         case token_kind::num: eat_token(); return make_value(tok.f64);
         case token_kind::tru: eat_token(); return tru;
         case token_kind::symb: return read_symbol();
@@ -1636,12 +1758,12 @@ struct function_reader : base_reader<function_reader> {
             assert(lex.input[tok.offset] == '"');
             assert(lex.input[tok.offset + tok.length - 1] == '"');
             assert(tok.length >= 2);
-            return new_string(&g_ctx, lex.input + tok.offset + 1, tok.length - 2);
+            return new_escaped_string(&g_ctx, lex.input + tok.offset + 1, tok.length - 2);
         case token_kind::lparen: return read_list();
         case token_kind::dot: throw hl_exception("unexpected .");
         case token_kind::rparen: throw hl_exception("stray )");
         case token_kind::comma: throw hl_exception("stary ,");
-        case token_kind::unexpected: break;
+        case token_kind::unexpected: throw hl_exception("unexpected token");
         }
         __builtin_unreachable();
     }
@@ -1671,7 +1793,7 @@ struct sexpr_reader : base_reader<sexpr_reader> {
     value read_expr() {
         peek_token();
         switch (tok.kind) {
-        case token_kind::end: break;
+        case token_kind::end: throw hl_exception("unexpected end of input");
         case token_kind::num: eat_token(); return make_value(tok.f64);
         case token_kind::tru: eat_token(); return tru;
         case token_kind::symb: eat_token(); return new_string(&g_ctx, lex.input + tok.offset, tok.length);
@@ -1680,12 +1802,12 @@ struct sexpr_reader : base_reader<sexpr_reader> {
             assert(lex.input[tok.offset] == '"');
             assert(lex.input[tok.offset + tok.length - 1] == '"');
             assert(tok.length >= 2);
-            return new_string(&g_ctx, lex.input + tok.offset + 1, tok.length - 2);
+            return new_escaped_string(&g_ctx, lex.input + tok.offset + 1, tok.length - 2);
         case token_kind::lparen: return read_list(); break;
         case token_kind::dot: throw hl_exception("unexpected ."); break;
         case token_kind::rparen: throw hl_exception("stray )"); break;
         case token_kind::comma: throw hl_exception("unexpected ,"); break;
-        case token_kind::unexpected: break;
+        case token_kind::unexpected: throw hl_exception("unexpected token"); break;
         }
         __builtin_unreachable();
     }
@@ -1749,34 +1871,21 @@ inline std::string print(value x) {
         return result + ")";
     }
     case value_kind::string: {
-        internal::obj_str *obj = internal::unwrap_string(x);
         std::string_view sv = unwrap_string_view(x);
-
-        bool looks_like_number = false;
-        char *strtod_end = nullptr;
-        (void)strtoll(sv.begin(), &strtod_end, 10);
-        if (strtod_end == sv.end()) {
-            looks_like_number = true;
-        }
-        if (!looks_like_number) {
-            strtod_end = nullptr;
-            (void)strtod(sv.begin(), &strtod_end);
-            if (strtod_end == sv.end()) {
-                looks_like_number = true;
-            }
-        }
-        if (!obj->need_escaping && !looks_like_number) {
-            return std::string{obj->str, obj->str + obj->length};
+        if (internal::is_bare_symbol(sv)) {
+            return std::string{sv};
         }
 
         std::string result = "\"";
         result.reserve(sv.length() + 2);
-        for (auto c : sv) {
-            if (isprint(c) && c != '\"') {
+        constexpr char hex[] = "0123456789abcdef";
+        for (char ch : sv) {
+            unsigned char c = static_cast<unsigned char>(ch);
+            if (internal::is_print(c) && ch != '\"' && ch != '\\') {
                 result += c;
                 continue;
             }
-            switch (c) {
+            switch (ch) {
             case '\a': result += "\\a"; break;
             case '\b': result += "\\b"; break;
             case '\x1b': result += "\\x1b"; break;
@@ -1788,8 +1897,11 @@ inline std::string print(value x) {
             case '\\': result += "\\\\"; break;
             case '\'': result += "\\'"; break;
             case '\"': result += "\\\""; break;
-            case '\?': result += "\\x3f"; break;
-            default: result += std::to_string(c);
+            default:
+                result += "\\x";
+                result += hex[(c >> 4) & 0xf];
+                result += hex[c & 0xf];
+                break;
             }
         }
         return result + "\"";
@@ -1809,13 +1921,16 @@ template <> struct from_list<int> {
     int operator()(value x) { return as_num_int(x); }
 };
 template <> struct from_list<unsigned> {
-    unsigned operator()(value x) { return as_num_int(x); }
+    unsigned operator()(value x) { return as_num_unsigned(x); }
 };
 template <> struct from_list<bool> {
     bool operator()(value x) { return is_true(x); }
 };
 template <> struct from_list<std::string_view> {
     std::string_view operator()(value x) { return as_string_view(x); }
+};
+template <> struct from_list<std::string> {
+    std::string operator()(value x) { return as_string(x); }
 };
 
 } // namespace headerlisp

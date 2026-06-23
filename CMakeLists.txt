@@ -1,27 +1,31 @@
-cmake_minimum_required(VERSION 3.10)
-project(headerlisp)
+cmake_minimum_required(VERSION 3.12)
+project(headerlisp LANGUAGES CXX)
 
-if (${ASAN})
-target_compile_options(headerlisp PUBLIC -fsanitize=address)
-target_link_libraries(headerlisp PUBLIC -fsanitize=address)
+include(CTest)
+
+option(ASAN "Build examples and tests with AddressSanitizer" OFF)
+
+add_library(headerlisp INTERFACE)
+target_include_directories(headerlisp INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(headerlisp INTERFACE cxx_std_17)
+
+if(ASAN)
+    target_compile_options(headerlisp INTERFACE -fsanitize=address)
+    target_link_libraries(headerlisp INTERFACE -fsanitize=address)
 endif()
 
-add_executable(example_interp examples/interp.cpp)
-target_include_directories(example_interp PUBLIC "${CMAKE_SOURCE_DIR}")
-target_compile_options(example_interp PUBLIC -std=c++17 -Wall -Wextra -pedantic -Wshadow -march=native)
+function(add_headerlisp_example target source)
+    add_executable(${target} ${source})
+    target_link_libraries(${target} PRIVATE headerlisp)
+    target_compile_options(${target} PRIVATE -Wall -Wextra -pedantic -Wshadow -march=native)
+endfunction()
 
-add_executable(example_interp_function examples/interp.cpp)
-target_include_directories(example_interp_function PUBLIC "${CMAKE_SOURCE_DIR}")
-target_compile_options(example_interp_function PUBLIC -std=c++17 -Wall -Wextra -pedantic -Wshadow -march=native)
+add_headerlisp_example(example_interp examples/interp.cpp)
+add_headerlisp_example(example_interp_function examples/interp_func.cpp)
+add_headerlisp_example(example_processing examples/processing.cpp)
+add_headerlisp_example(example_serialize examples/serialize.cpp)
+add_headerlisp_example(example_tests examples/tests.cpp)
 
-add_executable(example_processing examples/processing.cpp)
-target_include_directories(example_processing PUBLIC "${CMAKE_SOURCE_DIR}")
-target_compile_options(example_processing PUBLIC -std=c++17 -Wall -Wextra -pedantic -Wshadow -march=native)
-
-add_executable(example_serialize examples/serialize.cpp)
-target_include_directories(example_serialize PUBLIC "${CMAKE_SOURCE_DIR}")
-target_compile_options(example_serialize PUBLIC -std=c++17 -Wall -Wextra -pedantic -Wshadow -march=native)
-
-add_executable(example_tests examples/tests.cpp)
-target_include_directories(example_tests PUBLIC "${CMAKE_SOURCE_DIR}")
-target_compile_options(example_tests PUBLIC -std=c++17 -Wall -Wextra -pedantic -Wshadow -march=native)
+if(BUILD_TESTING)
+    add_test(NAME example_tests COMMAND example_tests)
+endif()
