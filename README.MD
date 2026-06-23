@@ -55,3 +55,4 @@ There are three main use cases for headerlisp:
 6. Exceptions are used to report errors.
 7. Strings are always copied inside headerlisp memory context and stored with a trailing null terminator. Use `as_string_view`, `as_string`, or `as_c_str` depending on whether you need a view, owned copy, or C string pointer. C++ string constructors store bytes literally; Lisp string escape sequences are decoded when reading quoted string expressions.
 8. `read` parses one complete expression and throws if non-comment, non-whitespace input remains. Use `read_list` to read several adjacent top-level expressions into a list.
+9. `match` supports flat list-pattern matching with direct literal patterns, `cap` captures, `maybe` for one optional final capture, and `any` or `_` for ignored elements.

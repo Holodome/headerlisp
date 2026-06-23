@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <tuple>
 #include <vector>
 
 #include "headerlisp.h"
@@ -17,6 +18,16 @@ static context_guard guard{1 << 24};
 
 static_assert(!std::is_move_constructible<headerlisp::context_guard>::value, "context_guard must not be movable");
 static_assert(!std::is_move_assignable<headerlisp::context_guard>::value, "context_guard must not be move-assignable");
+static_assert(std::is_same<headerlisp::match_tuple_t<headerlisp::cap_t>, std::tuple<headerlisp::value>>::value,
+              "cap should capture one value");
+static_assert(
+    std::is_same<headerlisp::match_tuple_t<headerlisp::any_t, headerlisp::cap_t>, std::tuple<headerlisp::value>>::value,
+    "any should not add a capture");
+static_assert(std::is_same<headerlisp::match_tuple_t<headerlisp::cap_t, headerlisp::maybe_t>,
+                           std::tuple<headerlisp::value, std::optional<headerlisp::value>>>::value,
+              "maybe should capture an optional value");
+static_assert(std::is_same<headerlisp::match_tuple_t<const char *, int>, std::tuple<>>::value,
+              "literal patterns should not add captures");
 
 // ----- Simple test harness -----
 static int tests_run = 0;
@@ -1043,6 +1054,63 @@ void test_unsigned_range_and_string_compare() {
     TEST(first(from_list_iter).as_int() == 1 && third(from_list_iter).as_int() == 3, "list_from_iter values");
 }
 
+void test_match_api() {
+    printf("--- Match API ---\n");
+
+    value arg_form = list("arg", 10, "name");
+    if (auto arg = match(arg_form, "arg", cap, cap)) {
+        auto [x, y] = *arg;
+        TEST(x.as_int() == 10, "match should capture first value");
+        TEST(y.as_string_view() == "name", "match should capture second value");
+    } else {
+        TEST(false, "match should accept direct literal and captures");
+    }
+
+    TEST(match(list("arg", 10), "arg", 10).has_value(), "literal-only match should succeed");
+    TEST(match(list("tag", 1, 2), "tag", any, cap).has_value(), "any should skip one value");
+    if (auto skipped = match(list("tag", 1, 2), "tag", _, cap)) {
+        auto [x] = *skipped;
+        TEST(x.as_int() == 2, "_ should skip one value");
+    } else {
+        TEST(false, "_ match should succeed");
+    }
+
+    if (auto m = match(list("op", "arg", true), "op", cap, maybe)) {
+        auto [arg, overflow] = *m;
+        TEST(arg.as_string_view() == "arg", "maybe-present match should capture required value");
+        TEST(overflow.has_value() && overflow->as<bool>(), "maybe should capture present final value");
+    } else {
+        TEST(false, "maybe-present match should succeed");
+    }
+
+    if (auto m = match(list("op", "arg"), "op", cap, maybe)) {
+        auto [arg, overflow] = *m;
+        TEST(arg.as_string_view() == "arg", "maybe-absent match should capture required value");
+        TEST(!overflow.has_value(), "maybe should be empty when final value is absent");
+    } else {
+        TEST(false, "maybe-absent match should succeed");
+    }
+
+    TEST(!match(make_value(1), cap).has_value(), "match should reject non-list input");
+    TEST(!match(arg_form, "other", cap, cap).has_value(), "match should reject wrong literal");
+    TEST(!match(arg_form, "arg", cap).has_value(), "match should reject too-long input");
+    TEST(!match(arg_form, "arg", cap, cap, cap).has_value(), "match should reject too-short input");
+    TEST(!match(list_dot("arg", 1), "arg", cap).has_value(), "match should reject dotted tail");
+    TEST(!match(list("op", "arg", true, false), "op", cap, maybe).has_value(),
+         "maybe should reject extra trailing values");
+    TEST(!match(list_dot("op", "arg", true), "op", cap, maybe).has_value(), "maybe should reject dotted tails");
+
+    TEST(match(list("s"), std::string_view{"s"}).has_value(), "string_view literal should match");
+    TEST(match(list("owned"), std::string{"owned"}).has_value(), "std::string literal should match");
+    TEST(match(list(42), 42).has_value(), "int literal should match");
+    TEST(match(list(4000000000u), 4000000000u).has_value(), "unsigned literal should match");
+    TEST(match(list(3.5), 3.5).has_value(), "double literal should match");
+    TEST(match(list(true), true).has_value(), "true literal should match");
+    TEST(match(list(nullptr), nullptr).has_value(), "nil literal should match");
+    TEST(match(list(nil), nil).has_value(), "value literal should match");
+    TEST(!match(list(true), false).has_value(), "bool literal mismatch should fail");
+}
+
 struct OnlyTo {
     int value;
 };
@@ -1342,6 +1410,7 @@ int main() {
     test_serialization_complex();
     test_string_roundtrip_and_reader_edges();
     test_unsigned_range_and_string_compare();
+    test_match_api();
     test_trait_detection();
     test_variable_arity_parser();
     test_iterators();

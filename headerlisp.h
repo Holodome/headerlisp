@@ -29,11 +29,11 @@
 #include <cassert>
 #include <cctype>
 #include <cmath>
+#include <cstdarg>
 #include <cstddef>
-#include <cstring>
 #include <cstdint>
 #include <cstdlib>
-#include <cstdarg>
+#include <cstring>
 
 #include <iterator>
 #include <limits>
@@ -41,6 +41,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -166,6 +167,10 @@ template <typename T, typename = void> struct from_list_concept : std::false_typ
 template <typename T>
 struct from_list_concept<T, std::void_t<decltype(from_list<T>{}(std::declval<value>()))>> : std::true_type {};
 
+namespace internal {
+template <typename... Patterns> struct match_tuple;
+}
+
 //
 // Value constructors
 //
@@ -184,6 +189,25 @@ template <typename... Args> value list(Args &&...args);
 // (<args1> <args2> ... . <last>)
 template <typename... Args> value list_dot(Args &&...args);
 template <typename It> value list_from_iter(It start, It end);
+
+//
+// Pattern matching
+//
+struct cap_t {};
+inline constexpr cap_t cap{};
+
+struct any_t {
+    template <typename Fn> bool operator()(Fn f, value lst) const;
+};
+inline constexpr any_t any{};
+inline constexpr any_t _{};
+
+struct maybe_t {};
+inline constexpr maybe_t maybe{};
+
+template <typename... Patterns> using match_tuple_t = typename internal::match_tuple<std::decay_t<Patterns>...>::type;
+
+template <typename... Patterns> std::optional<match_tuple_t<Patterns...>> match(value v, Patterns &&...patterns);
 
 //
 // Type checkers
@@ -354,7 +378,6 @@ inline value append(value a, value b, value c);
 template <typename Fn> value map(Fn f, value lst);
 template <typename Fn> value map(Fn f, value lst1, value lst2);
 template <typename Fn> bool all(Fn f, value lst);
-template <typename Fn> bool any(Fn f, value lst);
 template <typename U, typename Fn> U foldl(Fn f, U init, value lst);
 template <typename U, typename Fn> U foldl(Fn f, U init, value lst1, value lst2);
 template <typename U, typename Fn> U foldr(Fn f, U init, value lst);
@@ -531,8 +554,7 @@ inline bool is_bare_symbol(std::string_view sv) {
         case ';':
         case '"':
         case '\\':
-        case ',':
-            return false;
+        case ',': return false;
         default: break;
         }
     }
@@ -737,6 +759,110 @@ template <typename It> value list_from_iter(It start, It end) {
         add_last(h, t, make_value(*it));
     }
     return h;
+}
+
+namespace internal {
+
+template <typename T> struct is_match_cap : std::is_same<std::decay_t<T>, cap_t> {};
+template <typename T> struct is_match_any : std::is_same<std::decay_t<T>, any_t> {};
+template <typename T> struct is_match_maybe : std::is_same<std::decay_t<T>, maybe_t> {};
+
+template <typename Pattern> struct match_capture_tuple {
+    using type = std::tuple<>;
+};
+template <> struct match_capture_tuple<cap_t> {
+    using type = std::tuple<value>;
+};
+template <> struct match_capture_tuple<maybe_t> {
+    using type = std::tuple<std::optional<value>>;
+};
+
+template <> struct match_tuple<> {
+    using type = std::tuple<>;
+};
+template <typename First, typename... Rest> struct match_tuple<First, Rest...> {
+    using type = decltype(std::tuple_cat(std::declval<typename match_capture_tuple<std::decay_t<First>>::type>(),
+                                         std::declval<typename match_capture_tuple<std::decay_t<Rest>>::type>()...));
+};
+
+template <typename... Patterns>
+struct match_maybe_count
+    : std::integral_constant<size_t, (size_t{0} + ... + (is_match_maybe<Patterns>::value ? size_t{1} : size_t{0}))> {};
+
+template <typename... Patterns> struct match_maybe_only_final : std::true_type {};
+template <typename Pattern> struct match_maybe_only_final<Pattern> : std::true_type {};
+template <typename First, typename Second, typename... Rest>
+struct match_maybe_only_final<First, Second, Rest...>
+    : std::integral_constant<bool, !is_match_maybe<First>::value && match_maybe_only_final<Second, Rest...>::value> {};
+
+template <typename Pattern>
+std::optional<typename match_capture_tuple<std::decay_t<Pattern>>::type> match_element(value element,
+                                                                                       Pattern &&pattern) {
+    using pattern_t = std::decay_t<Pattern>;
+    if constexpr (is_match_cap<pattern_t>::value) {
+        (void)pattern;
+        return std::make_tuple(element);
+    } else if constexpr (is_match_any<pattern_t>::value) {
+        (void)pattern;
+        return std::tuple<>{};
+    } else {
+        value expected = make_value(std::forward<Pattern>(pattern));
+        if (!is_equal(element, expected)) {
+            return std::nullopt;
+        }
+        return std::tuple<>{};
+    }
+}
+
+inline std::optional<std::tuple<>> match_impl(value cursor) {
+    if (!is_nil(cursor)) {
+        return std::nullopt;
+    }
+    return std::tuple<>{};
+}
+
+template <typename Pattern, typename... Rest>
+std::optional<typename match_tuple<std::decay_t<Pattern>, std::decay_t<Rest>...>::type>
+match_impl(value cursor, Pattern &&pattern, Rest &&...rest) {
+    using pattern_t = std::decay_t<Pattern>;
+    if constexpr (is_match_maybe<pattern_t>::value) {
+        static_assert(sizeof...(Rest) == 0, "headerlisp::maybe must be the final match pattern");
+        (void)pattern;
+        if (is_nil(cursor)) {
+            return std::make_tuple(std::optional<value>{});
+        }
+        if (!is_cons(cursor)) {
+            return std::nullopt;
+        }
+        value captured = car(cursor);
+        if (!is_nil(cdr(cursor))) {
+            return std::nullopt;
+        }
+        return std::make_tuple(std::optional<value>{captured});
+    } else {
+        if (!is_cons(cursor)) {
+            return std::nullopt;
+        }
+        auto head = match_element(car(cursor), std::forward<Pattern>(pattern));
+        if (!head) {
+            return std::nullopt;
+        }
+        auto tail = match_impl(cdr(cursor), std::forward<Rest>(rest)...);
+        if (!tail) {
+            return std::nullopt;
+        }
+        return std::tuple_cat(*head, *tail);
+    }
+}
+
+} // namespace internal
+
+template <typename... Patterns> std::optional<match_tuple_t<Patterns...>> match(value v, Patterns &&...patterns) {
+    static_assert(internal::match_maybe_count<std::decay_t<Patterns>...>::value <= 1,
+                  "headerlisp::maybe can appear at most once in a match pattern");
+    static_assert(internal::match_maybe_only_final<std::decay_t<Patterns>...>::value,
+                  "headerlisp::maybe must be the final match pattern");
+    return internal::match_impl(v, std::forward<Patterns>(patterns)...);
 }
 
 constexpr value::value() : u64_(nil.u64_) {}
@@ -1194,7 +1320,7 @@ template <typename Fn> bool all(Fn f, value lst) {
     }
     return true;
 }
-template <typename Fn> bool any(Fn f, value lst) {
+template <typename Fn> bool any_t::operator()(Fn f, value lst) const {
     for (auto it : lst.iter()) {
         if (f(it)) {
             return true;
