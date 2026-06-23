@@ -955,10 +955,8 @@ void test_string_roundtrip_and_reader_edges() {
         std::string_view expected_view{expected.data(), expected.size()};
         value original = make_value(expected_view);
         std::string printed = print(original);
-        const char *end = nullptr;
-        value parsed = read(std::string_view{printed}, &end);
+        value parsed = read(std::string_view{printed});
 
-        TEST(end == printed.data() + printed.size(), "printed string should be fully consumed");
         TEST(is_string(parsed), "printed string should read back as string");
         TEST(as_string_view(parsed) == expected_view, "string round-trip");
         TEST(as_string(parsed) == expected, "as_string should copy full string contents");
@@ -983,21 +981,37 @@ void test_string_roundtrip_and_reader_edges() {
     TEST(print(make_value("alice@example.com")) == "alice@example.com", "email-like safe symbol should print bare");
 
     char symbol_buf[3] = {'a', 'b', 'c'};
-    const char *end = nullptr;
-    value symbol = read(std::string_view{symbol_buf, sizeof(symbol_buf)}, &end);
+    value symbol = read(std::string_view{symbol_buf, sizeof(symbol_buf)});
     TEST(as_string_view(symbol) == "abc", "non-null-terminated symbol should read");
-    TEST(end == symbol_buf + sizeof(symbol_buf), "symbol reader should stop at buffer end");
 
     char quoted_quote[4] = {'"', '\\', '"', '"'};
-    value quoted = read(std::string_view{quoted_quote, sizeof(quoted_quote)}, &end);
+    value quoted = read(std::string_view{quoted_quote, sizeof(quoted_quote)});
     TEST(as_string_view(quoted) == "\"", "escaped quote should read from bounded buffer");
-    TEST(end == quoted_quote + sizeof(quoted_quote), "quoted reader should stop at buffer end");
 
     char whitespace[1] = {' '};
     TEST_THROWS(read(std::string_view{whitespace, sizeof(whitespace)}), "whitespace-only input should throw");
     char comment[2] = {';', 'x'};
     TEST_THROWS(read(std::string_view{comment, sizeof(comment)}), "comment-only input should throw");
     TEST_THROWS(read(std::string_view{}), "empty input should throw");
+    TEST(as_string_view(read("abc ; trailing comment")) == "abc", "read should allow trailing comment");
+    TEST(as_string_view(read("abc \n \t")) == "abc", "read should allow trailing whitespace");
+    TEST_THROWS(read("abc def"), "read should reject trailing expression");
+    TEST_THROWS(read("() ()"), "read should reject multiple top-level expressions");
+
+    value top_level_items = read_list("() () t \"x\" 3");
+    TEST(length(top_level_items) == 5, "read_list should read multiple top-level expressions");
+    TEST(is_nil(first(top_level_items)), "read_list should preserve nil item");
+    TEST(is_nil(second(top_level_items)), "read_list should preserve second nil item");
+    TEST(is_true(third(top_level_items)), "read_list should preserve true item");
+    TEST(as_string_view(fourth(top_level_items)) == "x", "read_list should preserve string item");
+    TEST(fifth(top_level_items).as_int() == 3, "read_list should preserve numeric item");
+    TEST(is_nil(read_list("")), "read_list should return nil for empty input");
+    TEST(is_nil(read_list(" ; comment only")), "read_list should return nil for comment-only input");
+
+    char top_level_buf[3] = {'a', ' ', 'b'};
+    value bounded_items = read_list(std::string_view{top_level_buf, sizeof(top_level_buf)});
+    TEST(as_string_view(first(bounded_items)) == "a", "read_list should read first bounded symbol");
+    TEST(as_string_view(second(bounded_items)) == "b", "read_list should read second bounded symbol");
 }
 
 void test_unsigned_range_and_string_compare() {

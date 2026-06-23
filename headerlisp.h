@@ -421,8 +421,12 @@ using value_ns::operator/;
 // IO
 //
 
-inline value read(const char *s, size_t length, const char **end = nullptr);
-inline value read(std::string_view s, const char **end = nullptr);
+inline value read(const char *s, size_t length);
+inline value read(std::string_view s);
+inline value read_list(const char *s, size_t length);
+inline value read_list(std::string_view s);
+inline value read_function(const char *s, size_t length);
+inline value read_function(std::string_view s);
 inline std::string print(value x);
 
 namespace internal {
@@ -1817,31 +1821,51 @@ struct sexpr_reader : base_reader<sexpr_reader> {
 
 } // namespace internal::reader
 
-inline value read(const char *s, size_t length, const char **end) {
+namespace internal::reader {
+
+template <typename Reader> inline void require_end(Reader &reader) {
+    reader.peek_token();
+    if (reader.tok.kind != token_kind::end) {
+        throw hl_exception("unexpected trailing input at offset %zu", reader.tok.offset);
+    }
+}
+
+} // namespace internal::reader
+
+inline value read(const char *s, size_t length) {
     internal::reader::lexer lexer{s, s + length, s};
     internal::reader::sexpr_reader reader{lexer};
 
     value result = reader.read();
-    if (end) {
-        *end = reader.lex.cursor;
-    }
+    internal::reader::require_end(reader);
     return result;
 }
-inline value read(std::string_view s, const char **end) { return read(s.data(), s.length(), end); }
+inline value read(std::string_view s) { return read(s.data(), s.length()); }
 
-inline value read_function(const char *s, size_t length, const char **end) {
+inline value read_list(const char *s, size_t length) {
+    internal::reader::lexer lexer{s, s + length, s};
+    internal::reader::sexpr_reader reader{lexer};
+
+    value result, tail;
+    for (;;) {
+        reader.peek_token();
+        if (reader.tok.kind == internal::reader::token_kind::end) {
+            return result;
+        }
+        add_last(result, tail, reader.read_expr());
+    }
+}
+inline value read_list(std::string_view s) { return read_list(s.data(), s.length()); }
+
+inline value read_function(const char *s, size_t length) {
     internal::reader::lexer lexer{s, s + length, s, true};
     internal::reader::function_reader reader{lexer};
 
     value result = reader.read();
-    if (end) {
-        *end = reader.lex.cursor;
-    }
+    internal::reader::require_end(reader);
     return result;
 }
-inline value read_function(std::string_view s, const char **end = nullptr) {
-    return read_function(s.data(), s.length(), end);
-}
+inline value read_function(std::string_view s) { return read_function(s.data(), s.length()); }
 
 inline std::string print(value x) {
     switch (get_value_kind(x)) {
