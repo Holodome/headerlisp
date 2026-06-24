@@ -374,6 +374,8 @@ inline std::optional<value> nthcdr_opt(value lst, size_t idx);
 // Library list manipulation
 //
 inline void add_last(value &first, value &last, value x);
+template <typename T>
+inline std::enable_if_t<!std::is_same<std::decay_t<T>, value>::value> add_last(value &first, value &last, T &&x);
 inline value reverse(value lst);
 
 inline value append(value a, value b);
@@ -393,6 +395,7 @@ inline value cartesian_product(value lst1, value lst2);
 inline value cartesian_product(value lst1, value lst2, value lst3);
 
 inline value assoc(value v, value lst);
+template <typename T> value assoc(T &&v, value lst);
 template <typename T> value assoc_ref(T &&v, value lst);
 template <typename Fn> value remove(value lst, Fn f);
 template <typename Fn> std::optional<size_t> index_of(value lst, Fn f);
@@ -1288,6 +1291,12 @@ inline void add_last(value &first, value &last, value x) {
         last = new_last;
     }
 }
+
+template <typename T>
+inline std::enable_if_t<!std::is_same<std::decay_t<T>, value>::value> add_last(value &first, value &last, T &&x) {
+    add_last(first, last, make_value(std::forward<T>(x)));
+}
+
 inline value reverse(value lst) {
     value result = nil;
     for (auto it : lst.iter()) {
@@ -1446,9 +1455,13 @@ inline value assoc(value v, value lst) {
     return nil;
 }
 
+template <typename T> value assoc(T &&v, value lst) { return assoc(make_value(std::forward<T>(v)), lst); }
+
 template <typename T> value assoc_ref(T &&v, value lst) {
-    value found = assoc(make_value(std::forward<T>(v)), lst);
-    if (is_nil(found)) { return nil; }
+    value found = assoc(std::forward<T>(v), lst);
+    if (is_nil(found)) {
+        return nil;
+    }
     return cdr(found);
 }
 

@@ -186,6 +186,13 @@ void test_list_manipulation() {
     TEST(length(first_list) == 4, "add_last length");
     TEST(nth(first_list, 3).as_int() == 7, "add_last element");
 
+    value typed_first = nil;
+    value typed_last = nil;
+    add_last(typed_first, typed_last, "x");
+    add_last(typed_first, typed_last, 9);
+    TEST(length(typed_first) == 2, "typed add_last length");
+    TEST(first(typed_first).as_string_view() == "x" && second(typed_first).as_int() == 9, "typed add_last values");
+
     // cartesian_product
     value nums = list(1, 2);
     value strs = list("a", "b");
@@ -275,12 +282,14 @@ void test_assoc_and_member() {
     value found = assoc(make_value("b"), alist);
     TEST(!is_nil(found), "assoc found");
     TEST(cdr(found).as_int() == 2, "assoc value");
+    TEST(cdr(assoc("b", alist)).as_int() == 2, "assoc string key");
 
     TEST(assoc_ref(make_value("b"), alist).as_int() == 2, "assoc_ref value key");
     TEST(assoc_ref("b", alist).as_int() == 2, "assoc_ref string key");
 
     value not_found = assoc(make_value("x"), alist);
     TEST(is_nil(not_found), "assoc not found");
+    TEST(is_nil(assoc("x", alist)), "assoc string key not found");
     TEST(is_nil(assoc_ref("x", alist)), "assoc_ref not found");
 
     // member (by value)
@@ -647,6 +656,8 @@ void test_invalid_uses() {
     // assoc
     TEST_THROWS(assoc(make_value("a"), num_val), "assoc on non-list");
     TEST_THROWS(assoc(make_value("a"), improper_list), "assoc on improper list");
+    TEST_THROWS(assoc("a", num_val), "typed assoc on non-list");
+    TEST_THROWS(assoc("a", improper_list), "typed assoc on improper list");
     TEST_THROWS(assoc_ref("a", num_val), "assoc_ref on non-list");
     TEST_THROWS(assoc_ref("a", improper_list), "assoc_ref on improper list");
 
