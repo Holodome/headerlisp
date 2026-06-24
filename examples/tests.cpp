@@ -24,12 +24,23 @@ static_assert(std::is_move_constructible<headerlisp::list_builder>::value, "list
 static_assert(std::is_move_assignable<headerlisp::list_builder>::value, "list_builder should be move-assignable");
 static_assert(std::is_same<headerlisp::match_tuple_t<headerlisp::cap_t>, std::tuple<headerlisp::value>>::value,
               "cap should capture one value");
+static_assert(std::is_same<headerlisp::match_tuple_t<headerlisp::cap_as_t<int>>, std::tuple<int>>::value,
+              "cap_as should capture the requested type");
 static_assert(
     std::is_same<headerlisp::match_tuple_t<headerlisp::any_t, headerlisp::cap_t>, std::tuple<headerlisp::value>>::value,
     "any should not add a capture");
 static_assert(std::is_same<headerlisp::match_tuple_t<headerlisp::cap_t, headerlisp::maybe_t>,
                            std::tuple<headerlisp::value, std::optional<headerlisp::value>>>::value,
               "maybe should capture an optional value");
+static_assert(std::is_same<headerlisp::match_tuple_t<headerlisp::cap_t, headerlisp::maybe_as_t<bool>>,
+                           std::tuple<headerlisp::value, std::optional<bool>>>::value,
+              "maybe_as should capture an optional typed value");
+static_assert(std::is_same<headerlisp::match_tuple_t<headerlisp::cap_t, headerlisp::or_nil_t>,
+                           std::tuple<headerlisp::value, headerlisp::value>>::value,
+              "or_nil should capture a value");
+static_assert(std::is_same<headerlisp::match_tuple_t<headerlisp::cap_t, headerlisp::or_nil_as_t<bool>>,
+                           std::tuple<headerlisp::value, bool>>::value,
+              "or_nil_as should capture a typed value");
 static_assert(std::is_same<headerlisp::match_tuple_t<headerlisp::cap_t, headerlisp::rest_t>,
                            std::tuple<headerlisp::value, headerlisp::value>>::value,
               "rest should capture the remaining list");
@@ -1118,6 +1129,11 @@ void test_match_api() {
         TEST(x.as_int() == 10 && y.as_string_view() == "name", "require_match should capture values");
     }
 
+    {
+        auto [idx, name] = require_match(arg_form, "arg", cap_as<int>, cap_as<std::string_view>);
+        TEST(idx == 10 && name == "name", "require_match should capture typed values");
+    }
+
     try {
         (void)require_match("expected arg form", arg_form, "other", cap, cap);
         TEST(false, "require_match should throw on mismatch");
@@ -1126,6 +1142,21 @@ void test_match_api() {
     }
 
     TEST(match(list("arg", 10), "arg", 10).has_value(), "literal-only match should succeed");
+    if (auto m = match(list("arg", 10), "arg", cap_as<int>)) {
+        auto [idx] = *m;
+        TEST(idx == 10, "cap_as<int> should capture typed int");
+    } else {
+        TEST(false, "cap_as<int> match should succeed");
+    }
+    if (auto m = match(list("tag", "hello"), "tag", cap_as<std::string_view>)) {
+        auto [s] = *m;
+        TEST(s == "hello", "cap_as<string_view> should capture typed string");
+    } else {
+        TEST(false, "cap_as<string_view> match should succeed");
+    }
+    TEST(!match(list("arg"), "arg", cap_as<int>).has_value(), "cap_as should preserve shape failure");
+    TEST_THROWS(match(list("arg", "not-int"), "arg", cap_as<int>), "cap_as should propagate conversion errors");
+
     TEST(match(list("tag", 1, 2), "tag", any, cap).has_value(), "any should skip one value");
     if (auto skipped = match(list("tag", 1, 2), "tag", _, cap)) {
         auto [x] = *skipped;
@@ -1142,12 +1173,60 @@ void test_match_api() {
         TEST(false, "maybe-present match should succeed");
     }
 
+    if (auto m = match(list("op", "arg", true), "op", cap, maybe_as<bool>)) {
+        auto [arg, overflow] = *m;
+        TEST(arg.as_string_view() == "arg", "maybe_as-present match should capture required value");
+        TEST(overflow.has_value() && *overflow, "maybe_as should capture present typed final value");
+    } else {
+        TEST(false, "maybe_as-present match should succeed");
+    }
+
+    if (auto m = match(list("op", "arg", true), "op", cap, or_nil)) {
+        auto [arg, overflow] = *m;
+        TEST(arg.as_string_view() == "arg", "or_nil-present match should capture required value");
+        TEST(overflow.as<bool>(), "or_nil should capture present final value");
+    } else {
+        TEST(false, "or_nil-present match should succeed");
+    }
+
+    if (auto m = match(list("op", "arg", true), "op", cap, or_nil_as<bool>)) {
+        auto [arg, overflow] = *m;
+        TEST(arg.as_string_view() == "arg", "or_nil_as-present match should capture required value");
+        TEST(overflow, "or_nil_as should capture present typed final value");
+    } else {
+        TEST(false, "or_nil_as-present match should succeed");
+    }
+
     if (auto m = match(list("op", "arg"), "op", cap, maybe)) {
         auto [arg, overflow] = *m;
         TEST(arg.as_string_view() == "arg", "maybe-absent match should capture required value");
         TEST(!overflow.has_value(), "maybe should be empty when final value is absent");
     } else {
         TEST(false, "maybe-absent match should succeed");
+    }
+
+    if (auto m = match(list("op", "arg"), "op", cap, maybe_as<bool>)) {
+        auto [arg, overflow] = *m;
+        TEST(arg.as_string_view() == "arg", "maybe_as-absent match should capture required value");
+        TEST(!overflow.has_value(), "maybe_as should be empty when final value is absent");
+    } else {
+        TEST(false, "maybe_as-absent match should succeed");
+    }
+
+    if (auto m = match(list("op", "arg"), "op", cap, or_nil)) {
+        auto [arg, overflow] = *m;
+        TEST(arg.as_string_view() == "arg", "or_nil-absent match should capture required value");
+        TEST(is_nil(overflow), "or_nil should capture nil when final value is absent");
+    } else {
+        TEST(false, "or_nil-absent match should succeed");
+    }
+
+    if (auto m = match(list("op", "arg"), "op", cap, or_nil_as<bool>)) {
+        auto [arg, overflow] = *m;
+        TEST(arg.as_string_view() == "arg", "or_nil_as-absent match should capture required value");
+        TEST(!overflow, "or_nil_as should capture nil converted to requested type");
+    } else {
+        TEST(false, "or_nil_as-absent match should succeed");
     }
 
     if (auto m = match(list("tag", 1, 2, 3), "tag", cap, rest)) {
@@ -1172,7 +1251,24 @@ void test_match_api() {
     TEST(!match(list_dot("arg", 1), "arg", cap).has_value(), "match should reject dotted tail");
     TEST(!match(list("op", "arg", true, false), "op", cap, maybe).has_value(),
          "maybe should reject extra trailing values");
+    TEST(!match(list("op", "arg", true, false), "op", cap, maybe_as<bool>).has_value(),
+         "maybe_as should reject extra trailing values");
+    TEST(!match(list("op", "arg", true, false), "op", cap, or_nil).has_value(),
+         "or_nil should reject extra trailing values");
+    TEST(!match(list("op", "arg", true, false), "op", cap, or_nil_as<bool>).has_value(),
+         "or_nil_as should reject extra trailing values");
     TEST(!match(list_dot("op", "arg", true), "op", cap, maybe).has_value(), "maybe should reject dotted tails");
+    TEST(!match(list_dot("op", "arg", true), "op", cap, maybe_as<bool>).has_value(),
+         "maybe_as should reject dotted tails");
+    TEST(!match(list_dot("op", "arg", true), "op", cap, or_nil).has_value(), "or_nil should reject dotted tails");
+    TEST(!match(list_dot("op", "arg", true), "op", cap, or_nil_as<bool>).has_value(),
+         "or_nil_as should reject dotted tails");
+    TEST_THROWS(match(list("op", "arg", "not-int"), "op", cap, maybe_as<int>),
+                "maybe_as should propagate conversion errors");
+    TEST_THROWS(match(list("op", "arg", "not-int"), "op", cap, or_nil_as<int>),
+                "or_nil_as should propagate conversion errors");
+    TEST_THROWS(match(list("op", "arg"), "op", cap, or_nil_as<int>),
+                "or_nil_as should convert absent value through nil.as<T>");
     TEST(!match(list_dot("tag", 1, 2), "tag", rest).has_value(), "rest should reject dotted tails");
 
     TEST(match(list("s"), std::string_view{"s"}).has_value(), "string_view literal should match");
