@@ -190,6 +190,33 @@ template <typename... Args> value list(Args &&...args);
 template <typename... Args> value list_dot(Args &&...args);
 template <typename It> value list_from_iter(It start, It end);
 
+class list_builder {
+public:
+    list_builder() = default;
+    list_builder(const list_builder &) = default;
+    list_builder(list_builder &&) noexcept = default;
+    list_builder &operator=(const list_builder &) = default;
+    list_builder &operator=(list_builder &&) noexcept = default;
+    ~list_builder() = default;
+
+    void add(value x);
+
+    template <typename T> void add(T &&x);
+
+    void append(value lst);
+
+    template <typename T> void append(T &&lst);
+
+    value list() const noexcept;
+    bool empty() const noexcept;
+    size_t size() const noexcept;
+
+private:
+    value first_{};
+    value last_{};
+    size_t size_ = 0;
+};
+
 //
 // Pattern matching
 //
@@ -211,6 +238,8 @@ inline constexpr rest_t rest{};
 template <typename... Patterns> using match_tuple_t = typename internal::match_tuple<std::decay_t<Patterns>...>::type;
 
 template <typename... Patterns> std::optional<match_tuple_t<Patterns...>> match(value v, Patterns &&...patterns);
+template <typename... Patterns>
+match_tuple_t<Patterns...> require_match(std::string_view context, value v, Patterns &&...patterns);
 
 //
 // Type checkers
@@ -895,6 +924,15 @@ template <typename... Patterns> std::optional<match_tuple_t<Patterns...>> match(
     return internal::match_impl(v, std::forward<Patterns>(patterns)...);
 }
 
+template <typename... Patterns>
+match_tuple_t<Patterns...> require_match(std::string_view context, value v, Patterns &&...patterns) {
+    auto matched = match(v, std::forward<Patterns>(patterns)...);
+    if (!matched) {
+        throw hl_exception(context);
+    }
+    return *matched;
+}
+
 constexpr value::value() : u64_(nil.u64_) {}
 constexpr value::value(std::nullptr_t) : u64_(nil.u64_) {}
 
@@ -1296,6 +1334,25 @@ template <typename T>
 inline std::enable_if_t<!std::is_same<std::decay_t<T>, value>::value> add_last(value &first, value &last, T &&x) {
     add_last(first, last, make_value(std::forward<T>(x)));
 }
+
+inline void list_builder::add(value x) {
+    add_last(first_, last_, x);
+    ++size_;
+}
+
+template <typename T> void list_builder::add(T &&x) { add(make_value(std::forward<T>(x))); }
+
+inline void list_builder::append(value lst) {
+    for (auto x : lst.iter()) {
+        add(x);
+    }
+}
+
+template <typename T> void list_builder::append(T &&lst) { append(make_value(std::forward<T>(lst))); }
+
+inline value list_builder::list() const noexcept { return first_; }
+inline bool list_builder::empty() const noexcept { return size_ == 0; }
+inline size_t list_builder::size() const noexcept { return size_; }
 
 inline value reverse(value lst) {
     value result = nil;

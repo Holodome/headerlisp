@@ -18,6 +18,10 @@ static context_guard guard{1 << 24};
 
 static_assert(!std::is_move_constructible<headerlisp::context_guard>::value, "context_guard must not be movable");
 static_assert(!std::is_move_assignable<headerlisp::context_guard>::value, "context_guard must not be move-assignable");
+static_assert(std::is_copy_constructible<headerlisp::list_builder>::value, "list_builder should be copyable");
+static_assert(std::is_copy_assignable<headerlisp::list_builder>::value, "list_builder should be copy-assignable");
+static_assert(std::is_move_constructible<headerlisp::list_builder>::value, "list_builder should be movable");
+static_assert(std::is_move_assignable<headerlisp::list_builder>::value, "list_builder should be move-assignable");
 static_assert(std::is_same<headerlisp::match_tuple_t<headerlisp::cap_t>, std::tuple<headerlisp::value>>::value,
               "cap should capture one value");
 static_assert(
@@ -192,6 +196,29 @@ void test_list_manipulation() {
     add_last(typed_first, typed_last, 9);
     TEST(length(typed_first) == 2, "typed add_last length");
     TEST(first(typed_first).as_string_view() == "x" && second(typed_first).as_int() == 9, "typed add_last values");
+
+    list_builder builder;
+    TEST(builder.empty(), "list_builder starts empty");
+    TEST(is_nil(builder.list()), "empty list_builder returns nil");
+    builder.add("alpha");
+    builder.add(2);
+    builder.add(make_value(true));
+    TEST(!builder.empty(), "list_builder no longer empty");
+    TEST(builder.size() == 3, "list_builder size");
+    TEST(first(builder.list()).as_string_view() == "alpha" && second(builder.list()).as_int() == 2 &&
+             third(builder.list()).as<bool>(),
+         "list_builder values");
+
+    list_builder appended;
+    appended.append(list(1, 2));
+    appended.add(3);
+    appended.append(nil);
+    appended.append(list(4, 5));
+    TEST(appended.size() == 5, "list_builder append size");
+    TEST(first(appended.list()).as_int() == 1 && third(appended.list()).as_int() == 3 &&
+             fifth(appended.list()).as_int() == 5,
+         "list_builder append values");
+    TEST_THROWS(appended.append(make_value(1)), "list_builder append on non-list");
 
     // cartesian_product
     value nums = list(1, 2);
@@ -1084,6 +1111,18 @@ void test_match_api() {
         TEST(y.as_string_view() == "name", "match should capture second value");
     } else {
         TEST(false, "match should accept direct literal and captures");
+    }
+
+    {
+        auto [x, y] = require_match("arg form", arg_form, "arg", cap, cap);
+        TEST(x.as_int() == 10 && y.as_string_view() == "name", "require_match should capture values");
+    }
+
+    try {
+        (void)require_match("expected arg form", arg_form, "other", cap, cap);
+        TEST(false, "require_match should throw on mismatch");
+    } catch (const hl_exception &e) {
+        TEST(std::string(e.what()) == "expected arg form", "require_match should preserve context");
     }
 
     TEST(match(list("arg", 10), "arg", 10).has_value(), "literal-only match should succeed");
