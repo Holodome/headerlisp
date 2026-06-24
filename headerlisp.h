@@ -553,7 +553,7 @@ inline obj *nan_unbox_ptr(value x) noexcept { return (obj *)(uintptr_t)(x.intern
 
 template <typename T> inline T *obj_payload(obj *header) noexcept {
     static_assert(offsetof(obj, as) % alignof(T) == 0, "obj payload must be correctly aligned");
-    return static_cast<T *>(static_cast<void *>(header->as));
+    return reinterpret_cast<T *>(header->as);
 }
 
 inline struct obj_cons *unwrap_cons(value x) noexcept {
@@ -708,7 +708,7 @@ inline value new_escaped_string(context *ctx, const char *v, size_t length) {
                 int b = *cursor++;
                 if (!hex_symbol_to_int(a, &a) || !hex_symbol_to_int(b, &b))
                     throw hl_exception("invalid hex escape sequence");
-                *write_cursor++ = (a << 4) | b;
+                *write_cursor++ = static_cast<char>((a << 4) | b);
                 break;
             }
             default: throw hl_exception("invalid escape sequence");
