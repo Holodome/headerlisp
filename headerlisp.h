@@ -196,14 +196,17 @@ template <typename It> value list_from_iter(It start, It end);
 struct cap_t {};
 inline constexpr cap_t cap{};
 
-struct any_t {
-    template <typename Fn> bool operator()(Fn f, value lst) const;
-};
+struct any_t {};
 inline constexpr any_t any{};
 inline constexpr any_t _{};
 
+template <typename Fn> bool anyp(Fn f, value lst);
+
 struct maybe_t {};
 inline constexpr maybe_t maybe{};
+
+struct rest_t {};
+inline constexpr rest_t rest{};
 
 template <typename... Patterns> using match_tuple_t = typename internal::match_tuple<std::decay_t<Patterns>...>::type;
 
@@ -288,7 +291,7 @@ inline value cdddar(value x);
 inline value cddddr(value x);
 
 inline value head(value x);
-inline value rest(value x);
+inline value restp(value x);
 inline value first(value x);
 inline value second(value x);
 inline value third(value x);
@@ -390,6 +393,7 @@ inline value cartesian_product(value lst1, value lst2);
 inline value cartesian_product(value lst1, value lst2, value lst3);
 
 inline value assoc(value v, value lst);
+template <typename T> value assoc_ref(T &&v, value lst);
 template <typename Fn> value remove(value lst, Fn f);
 template <typename Fn> std::optional<size_t> index_of(value lst, Fn f);
 inline std::optional<size_t> index_of(value lst, value v);
@@ -739,9 +743,9 @@ template <typename T> inline void list_dot_helper(value &, value &t, T &&last) {
 }
 
 template <typename T, typename U, typename... Rest>
-void list_dot_helper(value &h, value &t, T &&first, U &&second, Rest &&...rest) {
+void list_dot_helper(value &h, value &t, T &&first, U &&second, Rest &&...rest_args) {
     add_last(h, t, make_value(std::forward<T>(first)));
-    list_dot_helper(h, t, std::forward<U>(second), std::forward<Rest>(rest)...);
+    list_dot_helper(h, t, std::forward<U>(second), std::forward<Rest>(rest_args)...);
 }
 
 template <typename... Args> value list_dot(Args &&...args) {
@@ -766,6 +770,7 @@ namespace internal {
 template <typename T> struct is_match_cap : std::is_same<std::decay_t<T>, cap_t> {};
 template <typename T> struct is_match_any : std::is_same<std::decay_t<T>, any_t> {};
 template <typename T> struct is_match_maybe : std::is_same<std::decay_t<T>, maybe_t> {};
+template <typename T> struct is_match_rest : std::is_same<std::decay_t<T>, rest_t> {};
 
 template <typename Pattern> struct match_capture_tuple {
     using type = std::tuple<>;
@@ -775,6 +780,9 @@ template <> struct match_capture_tuple<cap_t> {
 };
 template <> struct match_capture_tuple<maybe_t> {
     using type = std::tuple<std::optional<value>>;
+};
+template <> struct match_capture_tuple<rest_t> {
+    using type = std::tuple<value>;
 };
 
 template <> struct match_tuple<> {
@@ -788,12 +796,20 @@ template <typename First, typename... Rest> struct match_tuple<First, Rest...> {
 template <typename... Patterns>
 struct match_maybe_count
     : std::integral_constant<size_t, (size_t{0} + ... + (is_match_maybe<Patterns>::value ? size_t{1} : size_t{0}))> {};
+template <typename... Patterns>
+struct match_rest_count
+    : std::integral_constant<size_t, (size_t{0} + ... + (is_match_rest<Patterns>::value ? size_t{1} : size_t{0}))> {};
 
 template <typename... Patterns> struct match_maybe_only_final : std::true_type {};
 template <typename Pattern> struct match_maybe_only_final<Pattern> : std::true_type {};
 template <typename First, typename Second, typename... Rest>
 struct match_maybe_only_final<First, Second, Rest...>
     : std::integral_constant<bool, !is_match_maybe<First>::value && match_maybe_only_final<Second, Rest...>::value> {};
+template <typename... Patterns> struct match_rest_only_final : std::true_type {};
+template <typename Pattern> struct match_rest_only_final<Pattern> : std::true_type {};
+template <typename First, typename Second, typename... Rest>
+struct match_rest_only_final<First, Second, Rest...>
+    : std::integral_constant<bool, !is_match_rest<First>::value && match_rest_only_final<Second, Rest...>::value> {};
 
 template <typename Pattern>
 std::optional<typename match_capture_tuple<std::decay_t<Pattern>>::type> match_element(value element,
@@ -823,7 +839,7 @@ inline std::optional<std::tuple<>> match_impl(value cursor) {
 
 template <typename Pattern, typename... Rest>
 std::optional<typename match_tuple<std::decay_t<Pattern>, std::decay_t<Rest>...>::type>
-match_impl(value cursor, Pattern &&pattern, Rest &&...rest) {
+match_impl(value cursor, Pattern &&pattern, Rest &&...rest_patterns) {
     using pattern_t = std::decay_t<Pattern>;
     if constexpr (is_match_maybe<pattern_t>::value) {
         static_assert(sizeof...(Rest) == 0, "headerlisp::maybe must be the final match pattern");
@@ -839,6 +855,13 @@ match_impl(value cursor, Pattern &&pattern, Rest &&...rest) {
             return std::nullopt;
         }
         return std::make_tuple(std::optional<value>{captured});
+    } else if constexpr (is_match_rest<pattern_t>::value) {
+        static_assert(sizeof...(Rest) == 0, "headerlisp::rest must be the final match pattern");
+        (void)pattern;
+        if (!is_list(cursor)) {
+            return std::nullopt;
+        }
+        return std::make_tuple(cursor);
     } else {
         if (!is_cons(cursor)) {
             return std::nullopt;
@@ -847,7 +870,7 @@ match_impl(value cursor, Pattern &&pattern, Rest &&...rest) {
         if (!head) {
             return std::nullopt;
         }
-        auto tail = match_impl(cdr(cursor), std::forward<Rest>(rest)...);
+        auto tail = match_impl(cdr(cursor), std::forward<Rest>(rest_patterns)...);
         if (!tail) {
             return std::nullopt;
         }
@@ -862,6 +885,10 @@ template <typename... Patterns> std::optional<match_tuple_t<Patterns...>> match(
                   "headerlisp::maybe can appear at most once in a match pattern");
     static_assert(internal::match_maybe_only_final<std::decay_t<Patterns>...>::value,
                   "headerlisp::maybe must be the final match pattern");
+    static_assert(internal::match_rest_count<std::decay_t<Patterns>...>::value <= 1,
+                  "headerlisp::rest can appear at most once in a match pattern");
+    static_assert(internal::match_rest_only_final<std::decay_t<Patterns>...>::value,
+                  "headerlisp::rest must be the final match pattern");
     return internal::match_impl(v, std::forward<Patterns>(patterns)...);
 }
 
@@ -1147,7 +1174,7 @@ inline value cdddar(value x) { return cdr(cdr(cdr(car(x)))); }
 inline value cddddr(value x) { return cdr(cdr(cdr(cdr(x)))); }
 
 inline value head(value x) { return car(x); }
-inline value rest(value x) { return cdr(x); }
+inline value restp(value x) { return cdr(x); }
 inline value first(value x) { return car(x); }
 inline value second(value x) { return cadr(x); }
 inline value third(value x) { return caddr(x); }
@@ -1320,7 +1347,7 @@ template <typename Fn> bool all(Fn f, value lst) {
     }
     return true;
 }
-template <typename Fn> bool any_t::operator()(Fn f, value lst) const {
+template <typename Fn> bool anyp(Fn f, value lst) {
     for (auto it : lst.iter()) {
         if (f(it)) {
             return true;
@@ -1417,6 +1444,12 @@ inline value assoc(value v, value lst) {
         }
     }
     return nil;
+}
+
+template <typename T> value assoc_ref(T &&v, value lst) {
+    value found = assoc(make_value(std::forward<T>(v)), lst);
+    if (is_nil(found)) { return nil; }
+    return cdr(found);
 }
 
 template <typename Fn> std::optional<size_t> index_of(value lst, Fn f) {

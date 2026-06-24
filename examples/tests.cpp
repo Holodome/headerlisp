@@ -26,6 +26,9 @@ static_assert(
 static_assert(std::is_same<headerlisp::match_tuple_t<headerlisp::cap_t, headerlisp::maybe_t>,
                            std::tuple<headerlisp::value, std::optional<headerlisp::value>>>::value,
               "maybe should capture an optional value");
+static_assert(std::is_same<headerlisp::match_tuple_t<headerlisp::cap_t, headerlisp::rest_t>,
+                           std::tuple<headerlisp::value, headerlisp::value>>::value,
+              "rest should capture the remaining list");
 static_assert(std::is_same<headerlisp::match_tuple_t<const char *, int>, std::tuple<>>::value,
               "literal patterns should not add captures");
 
@@ -230,8 +233,8 @@ void test_higher_order_functions() {
     TEST(!all(is_odd, lst), "not all odd");
 
     // any
-    TEST(any(is_odd, lst), "any odd");
-    TEST(!any([](value x) { return x.as_int() > 10; }, lst), "any >10 false");
+    TEST(anyp(is_odd, lst), "anyp odd");
+    TEST(!anyp([](value x) { return x.as_int() > 10; }, lst), "anyp >10 false");
 
     // foldl
     int sum = foldl([](value x, int acc) { return x.as_int() + acc; }, 0, lst);
@@ -273,8 +276,12 @@ void test_assoc_and_member() {
     TEST(!is_nil(found), "assoc found");
     TEST(cdr(found).as_int() == 2, "assoc value");
 
+    TEST(assoc_ref(make_value("b"), alist).as_int() == 2, "assoc_ref value key");
+    TEST(assoc_ref("b", alist).as_int() == 2, "assoc_ref string key");
+
     value not_found = assoc(make_value("x"), alist);
     TEST(is_nil(not_found), "assoc not found");
+    TEST(is_nil(assoc_ref("x", alist)), "assoc_ref not found");
 
     // member (by value)
     TEST(member(make_value(2), alist, [](value x, value y) { return cdr(x).as_int() == y.as_int(); }),
@@ -526,10 +533,10 @@ void test_invalid_uses() {
     TEST_THROWS(head(nil_val), "head on nil");
     // head is same as car, so similar.
 
-    TEST_THROWS(rest(num_val), "rest on number");
-    TEST_THROWS(rest(str_val), "rest on string");
-    TEST_THROWS(rest(bool_val), "rest on boolean");
-    TEST_THROWS(rest(nil_val), "rest on nil");
+    TEST_THROWS(restp(num_val), "restp on number");
+    TEST_THROWS(restp(str_val), "restp on string");
+    TEST_THROWS(restp(bool_val), "restp on boolean");
+    TEST_THROWS(restp(nil_val), "restp on nil");
 
     TEST_THROWS(first(num_val), "first on number");
     TEST_THROWS(first(str_val), "first on string");
@@ -621,8 +628,8 @@ void test_invalid_uses() {
     TEST_THROWS(all(is_odd, num_val), "all on non-list");
 
     // any
-    TEST_THROWS(any(is_odd, num_val), "any on non-list");
-    TEST(any(is_odd, improper_list), "any on improper list");
+    TEST_THROWS(anyp(is_odd, num_val), "anyp on non-list");
+    TEST(anyp(is_odd, improper_list), "anyp on improper list");
 
     // foldl
     TEST_THROWS(foldl([](value, int acc) { return acc; }, 0, num_val), "foldl on non-list");
@@ -640,6 +647,8 @@ void test_invalid_uses() {
     // assoc
     TEST_THROWS(assoc(make_value("a"), num_val), "assoc on non-list");
     TEST_THROWS(assoc(make_value("a"), improper_list), "assoc on improper list");
+    TEST_THROWS(assoc_ref("a", num_val), "assoc_ref on non-list");
+    TEST_THROWS(assoc_ref("a", improper_list), "assoc_ref on improper list");
 
     // member (by predicate)
     TEST_THROWS(member(make_value(1), num_val, [](value, value) { return true; }), "member predicate on non-list");
@@ -1091,6 +1100,21 @@ void test_match_api() {
         TEST(false, "maybe-absent match should succeed");
     }
 
+    if (auto m = match(list("tag", 1, 2, 3), "tag", cap, rest)) {
+        auto [first_value, remaining] = *m;
+        TEST(first_value.as_int() == 1, "rest match should preserve first capture");
+        TEST(length(remaining) == 2 && second(remaining).as_int() == 3, "rest should capture remaining list");
+    } else {
+        TEST(false, "rest match should succeed");
+    }
+
+    if (auto m = match(list("tag"), "tag", rest)) {
+        auto [remaining] = *m;
+        TEST(is_nil(remaining), "rest should capture nil for an empty remaining list");
+    } else {
+        TEST(false, "empty rest match should succeed");
+    }
+
     TEST(!match(make_value(1), cap).has_value(), "match should reject non-list input");
     TEST(!match(arg_form, "other", cap, cap).has_value(), "match should reject wrong literal");
     TEST(!match(arg_form, "arg", cap).has_value(), "match should reject too-long input");
@@ -1099,6 +1123,7 @@ void test_match_api() {
     TEST(!match(list("op", "arg", true, false), "op", cap, maybe).has_value(),
          "maybe should reject extra trailing values");
     TEST(!match(list_dot("op", "arg", true), "op", cap, maybe).has_value(), "maybe should reject dotted tails");
+    TEST(!match(list_dot("tag", 1, 2), "tag", rest).has_value(), "rest should reject dotted tails");
 
     TEST(match(list("s"), std::string_view{"s"}).has_value(), "string_view literal should match");
     TEST(match(list("owned"), std::string{"owned"}).has_value(), "std::string literal should match");
@@ -1225,9 +1250,9 @@ std::unique_ptr<Node> parse_tree(headerlisp::value it) {
     std::string_view op = op_val.as_string_view();
 
     // Collect arguments (rest of the list)
-    headerlisp::value rest = headerlisp::rest(it);
+    headerlisp::value arg_values = headerlisp::restp(it);
     std::vector<std::unique_ptr<Node>> args;
-    for (auto x : rest.iter()) {
+    for (auto x : arg_values.iter()) {
         args.push_back(parse_tree(x));
     }
 
