@@ -276,7 +276,7 @@ inline const char *as_c_str(value x);
 inline double as_num_f64(value x);
 inline int as_num_int(value x);
 inline unsigned as_num_unsigned(value x);
-template <typename T, typename = std::enable_if<from_list_concept<T>::value>> inline T as(value x);
+template <typename T, typename = typename std::enable_if<from_list_concept<T>::value>::type> inline T as(value x);
 inline value &car(value x);
 inline value &cdr(value x);
 
@@ -404,7 +404,8 @@ inline std::optional<value> nthcdr_opt(value lst, size_t idx);
 //
 inline void add_last(value &first, value &last, value x);
 template <typename T>
-inline std::enable_if_t<!std::is_same<std::decay_t<T>, value>::value> add_last(value &first, value &last, T &&x);
+inline typename std::enable_if<!std::is_same<std::decay_t<T>, value>::value>::type
+add_last(value &first, value &last, T &&x);
 inline value reverse(value lst);
 
 inline value append(value a, value b);
@@ -531,18 +532,23 @@ struct obj_str {
 
 inline obj *nan_unbox_ptr(value x) noexcept { return (obj *)(uintptr_t)(x.internal() & ~(HL_SIGN_BIT | HL_QNAN)); }
 
+template <typename T> inline T *obj_payload(obj *header) noexcept {
+    static_assert(offsetof(obj, as) % alignof(T) == 0, "obj payload must be correctly aligned");
+    return static_cast<T *>(static_cast<void *>(header->as));
+}
+
 inline struct obj_cons *unwrap_cons(value x) noexcept {
     assert(is_obj(x));
     obj *obj = nan_unbox_ptr(x);
     assert(obj->kind == value_kind::cons);
-    return (obj_cons *)obj->as;
+    return obj_payload<obj_cons>(obj);
 }
 
 inline obj_str *unwrap_string(value x) noexcept {
     assert(is_obj(x));
     obj *obj = nan_unbox_ptr(x);
     assert(obj->kind == value_kind::string);
-    return (obj_str *)obj->as;
+    return obj_payload<obj_str>(obj);
 }
 
 inline bool is_space(int c) noexcept { return std::isspace(static_cast<unsigned char>(c)) != 0; }
@@ -625,14 +631,14 @@ inline bool hex_symbol_to_int(int x, int *value) noexcept {
 }
 
 inline value new_string(context *ctx, const char *v, size_t length) {
-    assert(v != NULL || length == 0);
+    assert(v != nullptr || length == 0);
     assert(length < UINT32_MAX);
 
     void *memory = alloc(ctx, offsetof(obj, as) + offsetof(obj_str, str) + length + 1);
     obj *header = static_cast<obj *>(memory);
     header->kind = value_kind::string;
 
-    obj_str *str = reinterpret_cast<obj_str *>(header->as);
+    obj_str *str = obj_payload<obj_str>(header);
     if (length) {
         memcpy(str->str, v, length);
     }
@@ -645,14 +651,14 @@ inline value new_string(context *ctx, const char *v, size_t length) {
 }
 
 inline value new_escaped_string(context *ctx, const char *v, size_t length) {
-    assert(v != NULL || length == 0);
+    assert(v != nullptr || length == 0);
     assert(length < UINT32_MAX);
 
     void *memory = alloc(ctx, offsetof(obj, as) + offsetof(obj_str, str) + length + 1);
     obj *header = static_cast<obj *>(memory);
     header->kind = value_kind::string;
 
-    obj_str *str = reinterpret_cast<obj_str *>(header->as);
+    obj_str *str = obj_payload<obj_str>(header);
     size_t actual_length = 0;
     char *write_cursor = str->str;
     const char *end = v + length;
@@ -710,7 +716,7 @@ inline value new_cons(context *ctx, value car, value cdr) {
     void *memory = alloc(ctx, offsetof(obj, as) + sizeof(obj_cons));
     obj *header = static_cast<obj *>(memory);
     header->kind = value_kind::cons;
-    obj_cons *c = reinterpret_cast<obj_cons *>(header->as);
+    obj_cons *c = obj_payload<obj_cons>(header);
     c->car = car;
     c->cdr = cdr;
     return nan_box_ptr(header);
@@ -726,7 +732,7 @@ inline void check_cons_nil(value x) {
 
 inline context set_context(context ctx) {
     context old = internal::g_ctx;
-    internal::g_ctx = std::move(ctx);
+    internal::g_ctx = ctx;
     return old;
 }
 
@@ -758,7 +764,7 @@ inline value make_value(const char *s) {
     return new_string(sv.begin(), sv.length());
 }
 inline value make_value(const std::string &s) { return make_value(std::string_view{s}); }
-template <typename T, typename = std::enable_if<to_list_concept<T>::value>> value make_value(T x) {
+template <typename T, typename = typename std::enable_if<to_list_concept<T>::value>::type> value make_value(T x) {
     return to_list<T>{}(x);
 }
 
@@ -983,7 +989,8 @@ private:
     value current_;
 };
 
-template <typename T, typename = std::enable_if<from_list_concept<T>::value>> class deserializing_value_iter {
+template <typename T, typename = typename std::enable_if<from_list_concept<T>::value>::type>
+class deserializing_value_iter {
 public:
     using difference_type = ptrdiff_t;
     using value_type = T;
@@ -1019,7 +1026,8 @@ private:
     value current_;
 };
 
-template <typename T, typename = std::enable_if<from_list_concept<T>::value>> class deserializing_value_range {
+template <typename T, typename = typename std::enable_if<from_list_concept<T>::value>::type>
+class deserializing_value_range {
 public:
     constexpr deserializing_value_range() = delete;
     constexpr deserializing_value_range(const deserializing_value_range &) noexcept = default;
@@ -1331,7 +1339,8 @@ inline void add_last(value &first, value &last, value x) {
 }
 
 template <typename T>
-inline std::enable_if_t<!std::is_same<std::decay_t<T>, value>::value> add_last(value &first, value &last, T &&x) {
+inline typename std::enable_if<!std::is_same<std::decay_t<T>, value>::value>::type
+add_last(value &first, value &last, T &&x) {
     add_last(first, last, make_value(std::forward<T>(x)));
 }
 
@@ -1909,8 +1918,11 @@ template <typename T> struct base_reader {
     const token &tok;
     bool should_return_old_token = false;
 
+private:
     explicit base_reader(lexer &l) noexcept : lex(l), tok(lex.next) {}
+    friend T;
 
+public:
     void peek_token() {
         if (should_return_old_token) {
             return;
@@ -1941,7 +1953,7 @@ template <typename T> struct base_reader {
         }
 
         value list_head, list_tail;
-        list_head = list_tail = cons(((T *)this)->read_expr(), nil);
+        list_head = list_tail = cons(static_cast<T *>(this)->read_expr(), nil);
         // Now enter the loop of parsing other list elements.
         for (;;) {
             peek_token();
@@ -1954,7 +1966,7 @@ template <typename T> struct base_reader {
             }
             if (tok.kind == token_kind::dot) {
                 eat_token();
-                unwrap_setcdr(list_tail, ((T *)this)->read_expr());
+                unwrap_setcdr(list_tail, static_cast<T *>(this)->read_expr());
                 peek_token();
                 if (tok.kind != token_kind::rparen) {
                     throw hl_exception("Missing closing paren after dot when reading list");
@@ -1967,7 +1979,7 @@ template <typename T> struct base_reader {
                 continue;
             }
 
-            value ast = ((T *)this)->read_expr();
+            value ast = static_cast<T *>(this)->read_expr();
             value tail = cons(ast, nil);
             unwrap_setcdr(list_tail, tail);
             list_tail = tail;
@@ -1977,7 +1989,7 @@ template <typename T> struct base_reader {
 
 struct function_reader : base_reader<function_reader> {
 
-    using base_reader<function_reader>::base_reader;
+    explicit function_reader(lexer &l) noexcept : base_reader<function_reader>(l) {}
 
     value read_expr() {
         peek_token();
@@ -2021,7 +2033,7 @@ struct function_reader : base_reader<function_reader> {
 
 struct sexpr_reader : base_reader<sexpr_reader> {
 
-    using base_reader<sexpr_reader>::base_reader;
+    explicit sexpr_reader(lexer &l) noexcept : base_reader<sexpr_reader>(l) {}
 
     value read_expr() {
         peek_token();
@@ -2135,7 +2147,7 @@ inline std::string print(value x) {
         for (char ch : sv) {
             unsigned char c = static_cast<unsigned char>(ch);
             if (internal::is_print(c) && ch != '\"' && ch != '\\') {
-                result += c;
+                result += ch;
                 continue;
             }
             switch (ch) {
